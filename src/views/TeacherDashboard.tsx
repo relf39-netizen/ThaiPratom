@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Teacher, Student, Subject, Assignment, Question } from '../types';
 import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, ExternalLink, Gamepad2, Calendar, Eye, CheckCircle, X, Clock, PlusCircle, ChevronLeft, ChevronRight, Book, Calculator, FlaskConical, Languages, ArrowLeft, Users, GraduationCap, Trash2, Edit, Shield } from 'lucide-react';
-import { getTeacherDashboard, addStudent, addAssignment, addQuestion, manageTeacher, getAllTeachers } from '../services/api';
+import { getTeacherDashboard, addStudent, addAssignment, addQuestion, manageTeacher } from '../services/api';
 
 interface TeacherDashboardProps {
   teacher: Teacher;
@@ -9,8 +9,7 @@ interface TeacherDashboardProps {
   onStartGame: () => void; 
 }
 
-// ลิงก์สำหรับหน้า Admin เก่า (เผื่อใช้)
-const ADMIN_URL = 'https://script.google.com/macros/s/AKfycbxuK3FqdTahB8trhbMoD3MbkfvKO774Uxq1D32s3vvjmDxT4IMOfaprncIvD89zbTDj/exec';
+const ADD_QUESTION_URL = 'https://script.google.com/macros/s/AKfycbxuK3FqdTahB8trhbMoD3MbkfvKO774Uxq1D32s3vvjmDxT4IMOfaprncIvD89zbTDj/exec';
 
 const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, onStartGame }) => {
   const [activeTab, setActiveTab] = useState<'menu' | 'students' | 'stats' | 'questions' | 'assignments' | 'teachers'>('menu');
@@ -25,21 +24,17 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [allTeachers, setAllTeachers] = useState<Teacher[]>([]);
   const [tForm, setTForm] = useState({ id: '', username: '', password: '', name: '', school: '', role: 'TEACHER', gradeLevel: 'ALL' });
   const [isEditingTeacher, setIsEditingTeacher] = useState(false);
-  const [teacherLoading, setTeacherLoading] = useState(false);
+  const [teacherLoading, setTeacherLoading] = useState(false); // เพิ่ม loading แยกของครู
 
-  // Student Form
+  // ... (State เดิม)
   const [newStudentName, setNewStudentName] = useState('');
   const [newStudentAvatar, setNewStudentAvatar] = useState('👦');
   const [newStudentGrade, setNewStudentGrade] = useState('P6'); 
   const [createdStudent, setCreatedStudent] = useState<Student | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-
-  // Assignment Form
   const [assignSubject, setAssignSubject] = useState<Subject>(Subject.MATH);
   const [assignCount, setAssignCount] = useState(10);
   const [assignDeadline, setAssignDeadline] = useState('');
-
-  // Question Form
   const [qSubject, setQSubject] = useState<Subject>(Subject.MATH);
   const [qGrade, setQGrade] = useState('P6');
   const [qText, setQText] = useState('');
@@ -47,13 +42,9 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [qChoices, setQChoices] = useState({c1:'', c2:'', c3:'', c4:''});
   const [qCorrect, setQCorrect] = useState('1');
   const [qExplain, setQExplain] = useState('');
-
-  // Question Bank State
   const [qBankSubject, setQBankSubject] = useState<Subject | null>(null); 
   const [qBankPage, setQBankPage] = useState(1);
   const ITEMS_PER_PAGE = 5;
-
-  // Modal State
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
 
   useEffect(() => {
@@ -70,20 +61,24 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
     setLoading(false);
   };
 
-  // ✅ ฟังก์ชันโหลดครู
+  // ✅ ฟังก์ชันโหลดครู (ปรับปรุงใหม่)
   const loadTeachers = async () => {
       if (teacher.role !== 'ADMIN') return;
       setTeacherLoading(true);
       try {
-          const data = await getAllTeachers();
+          // เรียก API โดยตรงเพื่อความชัวร์
+          const response = await fetch(`${ADD_QUESTION_URL}?type=get_teachers`);
+          const data = await response.json();
+          
           if (Array.isArray(data)) {
               setAllTeachers(data);
           } else {
+              console.error("Invalid teacher data format:", data);
               setAllTeachers([]);
           }
       } catch (e) {
           console.error("Error loading teachers:", e);
-          alert("โหลดข้อมูลครูไม่สำเร็จ");
+          alert("โหลดข้อมูลครูไม่สำเร็จ กรุณาลองใหม่");
       } finally {
           setTeacherLoading(false);
       }
@@ -100,7 +95,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
               alert(isEditingTeacher ? 'แก้ไขข้อมูลสำเร็จ' : 'เพิ่มครูสำเร็จ');
               setTForm({ id: '', username: '', password: '', name: '', school: '', role: 'TEACHER', gradeLevel: 'ALL' });
               setIsEditingTeacher(false);
-              loadTeachers(); 
+              loadTeachers(); // โหลดใหม่ทันที
           } else {
               alert('เกิดข้อผิดพลาด: ' + res.message);
           }
@@ -127,7 +122,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       setIsSaving(false);
   };
 
-  // ... (ฟังก์ชันอื่นๆ)
+  // ... (ฟังก์ชันอื่นๆ คงเดิม)
   const handleAddStudent = async () => {
     if (!newStudentName) return;
     setIsSaving(true);
@@ -175,7 +170,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             <MenuCard icon={<BarChart2 size={40} />} title="ดูผลคะแนน" desc="สถิติการสอบ" color="bg-green-50 text-green-600 border-green-200" onClick={() => setActiveTab('stats')} />
             <MenuCard icon={<FileText size={40} />} title="คลังข้อสอบ" desc="เพิ่มและจัดการข้อสอบ" color="bg-blue-50 text-blue-600 border-blue-200" onClick={() => setActiveTab('questions')} />
             <MenuCard icon={<Gamepad2 size={40} />} title="จัดกิจกรรมเกม" desc="เปิดห้องแข่งขัน Real-time" color="bg-pink-50 text-pink-600 border-pink-200" onClick={onStartGame} />
-            {/* ✅ ปุ่มสำหรับ ADMIN เท่านั้น */}
             {teacher.role === 'ADMIN' && (
                 <MenuCard icon={<Shield size={40} />} title="จัดการระบบครู" desc="เพิ่ม/ลบ รายชื่อครู" color="bg-slate-50 text-slate-600 border-slate-200" onClick={() => { setActiveTab('teachers'); loadTeachers(); }} />
             )}
@@ -186,7 +180,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         <div className="bg-white rounded-3xl shadow-sm p-4 md:p-6 min-h-[400px] relative animate-fade-in">
             <button onClick={() => setActiveTab('menu')} className="mb-6 flex items-center gap-2 text-gray-500 hover:text-purple-600 font-bold transition-colors"><div className="bg-gray-100 p-2 rounded-full"><ArrowLeft size={20} /></div> กลับเมนูหลัก</button>
             
-            {/* ✅ Tab: Teachers (Admin Only) - ส่วนที่หายไป นำกลับมาแล้ว */}
+            {/* Tab: Teachers (Admin Only) - ปรับปรุง UI */}
             {activeTab === 'teachers' && teacher.role === 'ADMIN' && (
                 <div>
                     <div className="flex justify-between items-center mb-6">
@@ -259,7 +253,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 </div>
             )}
 
-            {/* ... (Tabs อื่นๆ คงเดิม) ... */}
+            {/* ... (Tabs อื่นๆ คงเดิม) */}
             {activeTab === 'students' && (
                 <div className="grid md:grid-cols-2 gap-8">
                   {/* ... (ส่วนนักเรียนเหมือนเดิม) ... */}
@@ -342,7 +336,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                         </div>
                     </div>
                  </div>
-    
+
                  <div className="flex justify-between items-center mb-4">
                     <h3 className="text-lg font-bold text-gray-800">รายการการบ้านที่สั่งแล้ว ({assignments.length})</h3>
                     <button onClick={loadData} className="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-lg text-gray-600 flex items-center gap-1"><RefreshCw size={14}/> รีเฟรช</button>
@@ -385,6 +379,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                  )}
               </div>
             )}
+
+            {/* Tab 3: Stats */}
             {activeTab === 'stats' && (
               <div>
                 <div className="flex justify-between items-center mb-4">
@@ -415,6 +411,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 )}
               </div>
             )}
+            
+            {/* Tab 4: Question Bank */}
             {activeTab === 'questions' && (
                <div className="max-w-6xl mx-auto">
                   <div className="flex justify-between items-center mb-6">
