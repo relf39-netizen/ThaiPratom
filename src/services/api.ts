@@ -6,7 +6,7 @@ import { MOCK_STUDENTS, MOCK_QUESTIONS } from '../constants';
 // ---------------------------------------------------------------------------
 // 🟢 Web App URL
 // ---------------------------------------------------------------------------
-const GOOGLE_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbx3EwKuxf1L7_iYqoCLCpfHQlu8FyPL9ty8n4oJlSuInj9sMcsSFjQyw39--V2-gQ8U/exec'; 
+const GOOGLE_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbxuK3FqdTahB8trhbMoD3MbkfvKO774Uxq1D32s3vvjmDxT4IMOfaprncIvD89zbTDj/exec'; 
 
 export interface AppData {
   students: Student[];
@@ -194,3 +194,4 @@ export const fetchAppData = async (): Promise<AppData> => {
     return { students: MOCK_STUDENTS, questions: MOCK_QUESTIONS, results: [], assignments: [] };
   }
 };
+
