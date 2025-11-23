@@ -14,19 +14,19 @@ const ADD_QUESTION_URL = 'https://script.google.com/macros/s/AKfycbx3EwKuxf1L7_i
 const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, onStartGame }) => {
   const [activeTab, setActiveTab] = useState<'menu' | 'students' | 'stats' | 'questions' | 'assignments' | 'teachers'>('menu');
   
-  // ... (State เดิมทั้งหมดคงเดิม)
   const [students, setStudents] = useState<Student[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [stats, setStats] = useState<any[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]); 
   const [loading, setLoading] = useState(true);
   
-  // Teacher Management State (New)
+  // Teacher Management State
   const [allTeachers, setAllTeachers] = useState<Teacher[]>([]);
   const [tForm, setTForm] = useState({ id: '', username: '', password: '', name: '', school: '', role: 'TEACHER', gradeLevel: 'ALL' });
   const [isEditingTeacher, setIsEditingTeacher] = useState(false);
+  const [teacherLoading, setTeacherLoading] = useState(false); // เพิ่ม loading แยกของครู
 
-  // ... (State เดิม: Student Form, Assignment Form, Question Form)
+  // ... (State เดิม)
   const [newStudentName, setNewStudentName] = useState('');
   const [newStudentAvatar, setNewStudentAvatar] = useState('👦');
   const [newStudentGrade, setNewStudentGrade] = useState('P6'); 
@@ -58,41 +58,49 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
     setStats(data.results || []);
     setAssignments(data.assignments || []); 
     setQuestions(data.questions || []); 
-    
-    // ถ้าเป็น Admin ให้โหลดรายชื่อครูด้วย (ต้องเพิ่ม API นี้ในอนาคต หรือใช้ช่องทางพิเศษ)
-    // ในที่นี้เราจะใช้ฟังก์ชันแยก loadTeachers() เมื่อเข้าแท็บ teachers
     setLoading(false);
   };
 
-  // ฟังก์ชันโหลดครู
+  // ✅ ฟังก์ชันโหลดครู (ปรับปรุงใหม่)
   const loadTeachers = async () => {
       if (teacher.role !== 'ADMIN') return;
-      setLoading(true);
+      setTeacherLoading(true);
       try {
+          // เรียก API โดยตรงเพื่อความชัวร์
           const response = await fetch(`${ADD_QUESTION_URL}?type=get_teachers`);
           const data = await response.json();
-          setAllTeachers(data);
+          
+          if (Array.isArray(data)) {
+              setAllTeachers(data);
+          } else {
+              console.error("Invalid teacher data format:", data);
+              setAllTeachers([]);
+          }
       } catch (e) {
-          console.error(e);
+          console.error("Error loading teachers:", e);
+          alert("โหลดข้อมูลครูไม่สำเร็จ กรุณาลองใหม่");
+      } finally {
+          setTeacherLoading(false);
       }
-      setLoading(false);
   };
 
-  // ฟังก์ชันจัดการครู
   const handleSaveTeacher = async () => {
       if (!tForm.username || !tForm.password || !tForm.name) return alert('กรุณากรอกข้อมูลให้ครบ');
       setIsSaving(true);
       
       const action = isEditingTeacher ? 'edit' : 'add';
-      const res = await manageTeacher({ ...tForm, action });
-      
-      if (res.success) {
-          alert(isEditingTeacher ? 'แก้ไขข้อมูลสำเร็จ' : 'เพิ่มครูสำเร็จ');
-          setTForm({ id: '', username: '', password: '', name: '', school: '', role: 'TEACHER', gradeLevel: 'ALL' });
-          setIsEditingTeacher(false);
-          loadTeachers();
-      } else {
-          alert('เกิดข้อผิดพลาด: ' + res.message);
+      try {
+          const res = await manageTeacher({ ...tForm, action });
+          if (res.success) {
+              alert(isEditingTeacher ? 'แก้ไขข้อมูลสำเร็จ' : 'เพิ่มครูสำเร็จ');
+              setTForm({ id: '', username: '', password: '', name: '', school: '', role: 'TEACHER', gradeLevel: 'ALL' });
+              setIsEditingTeacher(false);
+              loadTeachers(); // โหลดใหม่ทันที
+          } else {
+              alert('เกิดข้อผิดพลาด: ' + res.message);
+          }
+      } catch(e) {
+          alert('เชื่อมต่อไม่สำเร็จ');
       }
       setIsSaving(false);
   };
@@ -100,26 +108,26 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const handleDeleteTeacher = async (id: number) => {
       if (!confirm('ต้องการลบรายชื่อครูท่านนี้ใช่หรือไม่?')) return;
       setIsSaving(true);
-      const res = await manageTeacher({ id, action: 'delete' });
-      if (res.success) {
-          alert('ลบสำเร็จ');
-          loadTeachers();
-      } else {
-          alert('ลบไม่สำเร็จ');
+      try {
+          const res = await manageTeacher({ id, action: 'delete' });
+          if (res.success) {
+              alert('ลบสำเร็จ');
+              loadTeachers();
+          } else {
+              alert('ลบไม่สำเร็จ');
+          }
+      } catch(e) {
+          alert('เชื่อมต่อไม่สำเร็จ');
       }
       setIsSaving(false);
   };
 
-  // ... (ฟังก์ชันเดิม handleAddStudent, handleCreateAssignment, handleAddQuestion etc.) ...
+  // ... (ฟังก์ชันอื่นๆ คงเดิม)
   const handleAddStudent = async () => {
     if (!newStudentName) return;
     setIsSaving(true);
     const result = await addStudent(newStudentName, teacher.school, newStudentAvatar, newStudentGrade);
-    if (result) {
-        setCreatedStudent(result);
-        setStudents([...students, result]);
-        setNewStudentName('');
-    } else { alert('เกิดข้อผิดพลาดในการบันทึก'); }
+    if (result) { setCreatedStudent(result); setStudents([...students, result]); setNewStudentName(''); } else { alert('เกิดข้อผิดพลาดในการบันทึก'); }
     setIsSaving(false);
   };
   const handleCreateAssignment = async () => {
@@ -146,6 +154,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
 
   return (
     <div className="max-w-6xl mx-auto pb-20">
+      {/* Header */}
       <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-6 rounded-b-3xl md:rounded-3xl shadow-lg mb-8 flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold flex items-center gap-2"><GraduationCap size={28} /> ห้องพักครู</h2>
@@ -171,27 +180,30 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         <div className="bg-white rounded-3xl shadow-sm p-4 md:p-6 min-h-[400px] relative animate-fade-in">
             <button onClick={() => setActiveTab('menu')} className="mb-6 flex items-center gap-2 text-gray-500 hover:text-purple-600 font-bold transition-colors"><div className="bg-gray-100 p-2 rounded-full"><ArrowLeft size={20} /></div> กลับเมนูหลัก</button>
             
-            {/* Tab: Teachers (Admin Only) */}
+            {/* Tab: Teachers (Admin Only) - ปรับปรุง UI */}
             {activeTab === 'teachers' && teacher.role === 'ADMIN' && (
                 <div>
-                    <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2"><Shield className="text-slate-600"/> จัดการข้อมูลครู</h3>
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2"><Shield className="text-slate-600"/> จัดการข้อมูลครู</h3>
+                        <button onClick={loadTeachers} className="text-sm bg-slate-100 hover:bg-slate-200 px-3 py-1 rounded-lg text-slate-600 flex items-center gap-1"><RefreshCw size={14}/> รีเฟรช</button>
+                    </div>
                     
                     <div className="grid md:grid-cols-3 gap-6">
                         {/* Form */}
-                        <div className="md:col-span-1 bg-slate-50 p-6 rounded-2xl border border-slate-200 h-fit">
-                            <h4 className="font-bold text-gray-700 mb-4">{isEditingTeacher ? '✏️ แก้ไขข้อมูล' : '➕ เพิ่มครูใหม่'}</h4>
+                        <div className="md:col-span-1 bg-slate-50 p-6 rounded-2xl border border-slate-200 h-fit shadow-sm">
+                            <h4 className="font-bold text-gray-700 mb-4 border-b pb-2">{isEditingTeacher ? '✏️ แก้ไขข้อมูล' : '➕ เพิ่มครูใหม่'}</h4>
                             <div className="space-y-3">
-                                <input type="text" placeholder="Username (เข้าสู่ระบบ)" value={tForm.username} onChange={e=>setTForm({...tForm, username:e.target.value})} className="w-full p-2 border rounded-lg"/>
-                                <input type="text" placeholder="Password" value={tForm.password} onChange={e=>setTForm({...tForm, password:e.target.value})} className="w-full p-2 border rounded-lg"/>
-                                <input type="text" placeholder="ชื่อ-นามสกุล" value={tForm.name} onChange={e=>setTForm({...tForm, name:e.target.value})} className="w-full p-2 border rounded-lg"/>
-                                <input type="text" placeholder="โรงเรียน" value={tForm.school} onChange={e=>setTForm({...tForm, school:e.target.value})} className="w-full p-2 border rounded-lg"/>
+                                <input type="text" placeholder="Username" value={tForm.username} onChange={e=>setTForm({...tForm, username:e.target.value})} className="w-full p-2 border rounded-lg bg-white"/>
+                                <input type="text" placeholder="Password" value={tForm.password} onChange={e=>setTForm({...tForm, password:e.target.value})} className="w-full p-2 border rounded-lg bg-white"/>
+                                <input type="text" placeholder="ชื่อ-นามสกุล" value={tForm.name} onChange={e=>setTForm({...tForm, name:e.target.value})} className="w-full p-2 border rounded-lg bg-white"/>
+                                <input type="text" placeholder="โรงเรียน" value={tForm.school} onChange={e=>setTForm({...tForm, school:e.target.value})} className="w-full p-2 border rounded-lg bg-white"/>
                                 
                                 <div className="grid grid-cols-2 gap-2">
-                                    <select value={tForm.role} onChange={e=>setTForm({...tForm, role:e.target.value})} className="p-2 border rounded-lg">
+                                    <select value={tForm.role} onChange={e=>setTForm({...tForm, role:e.target.value})} className="p-2 border rounded-lg bg-white">
                                         <option value="TEACHER">ครูทั่วไป</option>
                                         <option value="ADMIN">ผู้ดูแลระบบ</option>
                                     </select>
-                                    <select value={tForm.gradeLevel} onChange={e=>setTForm({...tForm, gradeLevel:e.target.value})} className="p-2 border rounded-lg">
+                                    <select value={tForm.gradeLevel} onChange={e=>setTForm({...tForm, gradeLevel:e.target.value})} className="p-2 border rounded-lg bg-white">
                                         <option value="ALL">ทุกชั้น</option>
                                         <option value="P1">ป.1</option><option value="P2">ป.2</option>
                                         <option value="P3">ป.3</option><option value="P4">ป.4</option>
@@ -201,93 +213,103 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
 
                                 <div className="flex gap-2 pt-2">
                                     {isEditingTeacher && <button onClick={()=>{setIsEditingTeacher(false); setTForm({ id: '', username: '', password: '', name: '', school: '', role: 'TEACHER', gradeLevel: 'ALL' });}} className="bg-gray-200 px-4 py-2 rounded-lg text-sm">ยกเลิก</button>}
-                                    <button onClick={handleSaveTeacher} disabled={isSaving} className="flex-1 bg-slate-700 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-slate-800">{isSaving ? '...' : 'บันทึก'}</button>
+                                    <button onClick={handleSaveTeacher} disabled={isSaving} className="flex-1 bg-slate-700 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-slate-800">{isSaving ? 'กำลังบันทึก...' : (isEditingTeacher ? 'บันทึกแก้ไข' : 'เพิ่มข้อมูล')}</button>
                                 </div>
                             </div>
                         </div>
 
                         {/* List */}
-                        <div className="md:col-span-2 overflow-x-auto">
-                            <table className="w-full text-sm text-left">
-                                <thead className="bg-slate-100 text-slate-700">
-                                    <tr><th className="p-3 rounded-l-lg">ชื่อ</th><th className="p-3">User</th><th className="p-3">Pass</th><th className="p-3">โรงเรียน</th><th className="p-3">สิทธิ์</th><th className="p-3 rounded-r-lg">จัดการ</th></tr>
-                                </thead>
-                                <tbody>
-                                    {allTeachers.map((t) => (
-                                        <tr key={t.id} className="border-b hover:bg-slate-50">
-                                            <td className="p-3 font-bold">{t.name}</td>
-                                            <td className="p-3 text-gray-500">{t.username}</td>
-                                            <td className="p-3 text-gray-400">••••</td>
-                                            <td className="p-3">{t.school}</td>
-                                            <td className="p-3"><span className={`px-2 py-1 rounded text-xs font-bold ${t.role==='ADMIN'?'bg-red-100 text-red-700':'bg-blue-100 text-blue-700'}`}>{t.role}</span></td>
-                                            <td className="p-3 flex gap-2">
-                                                <button onClick={()=>{setIsEditingTeacher(true); setTForm(t as any);}} className="text-blue-600 hover:bg-blue-50 p-1 rounded"><Edit size={16}/></button>
-                                                <button onClick={()=>handleDeleteTeacher(t.id!)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={16}/></button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                        <div className="md:col-span-2 overflow-x-auto bg-white rounded-2xl border border-gray-200 shadow-sm">
+                            {teacherLoading ? (
+                                <div className="p-10 text-center text-gray-400 animate-pulse">กำลังโหลดรายชื่อ...</div>
+                            ) : (
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-100 text-slate-700 border-b">
+                                        <tr><th className="p-3">ชื่อ</th><th className="p-3">User</th><th className="p-3">Pass</th><th className="p-3">โรงเรียน</th><th className="p-3">สิทธิ์</th><th className="p-3 text-right">จัดการ</th></tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {allTeachers.length === 0 ? (
+                                            <tr><td colSpan={6} className="p-6 text-center text-gray-400">ไม่พบข้อมูลครู</td></tr>
+                                        ) : (
+                                            allTeachers.map((t) => (
+                                                <tr key={t.id} className="hover:bg-slate-50 transition-colors">
+                                                    <td className="p-3 font-bold text-gray-800">{t.name}</td>
+                                                    <td className="p-3 text-gray-500">{t.username}</td>
+                                                    <td className="p-3 text-gray-400 font-mono">{t.password}</td>
+                                                    <td className="p-3 text-gray-600">{t.school}</td>
+                                                    <td className="p-3"><span className={`px-2 py-0.5 rounded text-xs font-bold ${t.role==='ADMIN'?'bg-red-100 text-red-700':'bg-blue-100 text-blue-700'}`}>{t.role}</span></td>
+                                                    <td className="p-3 flex justify-end gap-2">
+                                                        <button onClick={()=>{setIsEditingTeacher(true); setTForm(t as any);}} className="text-blue-600 hover:bg-blue-100 p-1.5 rounded transition"><Edit size={16}/></button>
+                                                        <button onClick={()=>handleDeleteTeacher(t.id!)} className="text-red-500 hover:bg-red-100 p-1.5 rounded transition"><Trash2 size={16}/></button>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            )}
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* ... (Tabs อื่นๆ students, assignments, stats, questions คงเดิม) ... */}
+            {/* ... (Tabs อื่นๆ คงเดิม) */}
             {activeTab === 'students' && (
-              <div className="grid md:grid-cols-2 gap-8">
-                <div>
-                  <h3 className="text-lg font-bold text-gray-800 mb-4">ลงทะเบียนนักเรียนใหม่</h3>
-                  <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200">
-                    <div className="mb-4">
-                        <label className="block text-sm font-medium text-gray-600 mb-2">ระดับชั้น</label>
-                        <select value={newStudentGrade} onChange={(e)=>setNewStudentGrade(e.target.value)} className="w-full p-3 border rounded-xl bg-white text-gray-900">
-                            {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
-                        </select>
-                    </div>
-                    <label className="block text-sm font-medium text-gray-600 mb-2">ชื่อ-นามสกุล</label>
-                    <input type="text" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} className="w-full p-3 border rounded-xl mb-4 focus:ring-2 focus:ring-purple-200 outline-none text-gray-800 bg-white" placeholder="ด.ช. มานะ อดทน" />
-                    <div className="bg-purple-50 p-3 rounded-xl mb-4 border border-purple-100"><span className="text-xs text-purple-600 font-bold uppercase">สังกัดโรงเรียน</span><p className="text-gray-800 font-medium truncate">{teacher.school}</p></div>
-                    <label className="block text-sm font-medium text-gray-600 mb-2">รูปแทนตัว</label>
-                    <div className="flex gap-2 mb-6 overflow-x-auto py-1">{['👦','👧','🧒','🧑','👓','🦄','🦁','🐼'].map(emoji => (<button key={emoji} onClick={() => setNewStudentAvatar(emoji)} className={`text-2xl p-2 rounded-lg border-2 transition ${newStudentAvatar === emoji ? 'border-purple-500 bg-purple-50' : 'border-transparent hover:bg-gray-200'}`}>{emoji}</button>))}</div>
-                    <button onClick={handleAddStudent} disabled={isSaving || !newStudentName} className="w-full bg-purple-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-purple-700 transition disabled:opacity-50 flex items-center justify-center gap-2">{isSaving ? 'กำลังบันทึก...' : <><Save size={18} /> บันทึกข้อมูล</>}</button>
-                  </div>
-                  <div className="mt-6">
-                    <div className="flex justify-between items-center mb-2"><h4 className="text-sm font-bold text-gray-500">รายชื่อนักเรียน ({students.length})</h4><button onClick={loadData} className="text-purple-600 hover:bg-purple-50 p-1 rounded"><RefreshCw size={14}/></button></div>
-                    <div className="max-h-60 overflow-y-auto border border-gray-100 rounded-xl bg-white">
-                        {students.map(s => (
-                            <div key={s.id} className="flex items-center p-3 border-b last:border-0 hover:bg-gray-50 gap-3">
-                                <div className="flex-shrink-0 w-10 h-10 bg-purple-50 rounded-full flex items-center justify-center text-xl border border-purple-100">{s.avatar}</div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-bold text-gray-800 truncate">{s.name || 'ไม่ระบุชื่อ'}</p>
-                                    <span className="text-[10px] text-white bg-purple-400 px-2 py-0.5 rounded-full">{s.grade}</span>
-                                </div>
-                                <div className="flex-shrink-0"><span className="font-mono text-xs font-medium text-purple-600 bg-white px-2 py-1 rounded border border-purple-200 shadow-sm">{s.id}</span></div>
-                            </div>
-                        ))}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex flex-col items-center justify-center mt-6 md:mt-0">
-                  {createdStudent ? (
-                    <div className="bg-gradient-to-br from-blue-500 to-purple-600 p-1 rounded-3xl shadow-2xl w-full max-w-xs animate-fade-in scale-100 transition-transform">
-                      <div className="bg-white rounded-[22px] p-6 text-center relative overflow-hidden">
-                        <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-400 to-purple-500"></div>
-                        <h4 className="text-gray-500 text-xs uppercase tracking-widest font-bold mb-4">บัตรประจำตัวนักเรียน</h4>
-                        <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center text-6xl mx-auto mb-4 shadow-inner">{createdStudent.avatar}</div>
-                        <h3 className="text-xl font-bold text-gray-800 mb-1">{createdStudent.name}</h3>
-                        <div className="flex justify-center gap-2 mb-6">
-                            <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-xs font-bold">{createdStudent.grade}</span>
-                            <span className="text-gray-500 text-xs">{createdStudent.school}</span>
-                        </div>
-                        <div className="bg-gray-100 rounded-xl p-3 mb-2"><span className="block text-xs text-gray-400 mb-1">รหัสเข้าใช้งาน (ID)</span><span className="text-3xl font-mono font-black text-purple-600 tracking-widest">{createdStudent.id}</span></div>
+                <div className="grid md:grid-cols-2 gap-8">
+                  {/* ... (ส่วนนักเรียนเหมือนเดิม) ... */}
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-800 mb-4">ลงทะเบียนนักเรียนใหม่</h3>
+                    <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200">
+                      <div className="mb-4">
+                          <label className="block text-sm font-medium text-gray-600 mb-2">ระดับชั้น</label>
+                          <select value={newStudentGrade} onChange={(e)=>setNewStudentGrade(e.target.value)} className="w-full p-3 border rounded-xl bg-white text-gray-900">
+                              {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
+                          </select>
                       </div>
-                      <div className="text-center mt-4"><button onClick={() => setCreatedStudent(null)} className="text-white/90 text-sm font-bold underline hover:text-white">+ เพิ่มคนต่อไป</button></div>
+                      <label className="block text-sm font-medium text-gray-600 mb-2">ชื่อ-นามสกุล</label>
+                      <input type="text" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} className="w-full p-3 border rounded-xl mb-4 focus:ring-2 focus:ring-purple-200 outline-none text-gray-800 bg-white" placeholder="ด.ช. มานะ อดทน" />
+                      <div className="bg-purple-50 p-3 rounded-xl mb-4 border border-purple-100"><span className="text-xs text-purple-600 font-bold uppercase">สังกัดโรงเรียน</span><p className="text-gray-800 font-medium truncate">{teacher.school}</p></div>
+                      <label className="block text-sm font-medium text-gray-600 mb-2">รูปแทนตัว</label>
+                      <div className="flex gap-2 mb-6 overflow-x-auto py-1">{['👦','👧','🧒','🧑','👓','🦄','🦁','🐼'].map(emoji => (<button key={emoji} onClick={() => setNewStudentAvatar(emoji)} className={`text-2xl p-2 rounded-lg border-2 transition ${newStudentAvatar === emoji ? 'border-purple-500 bg-purple-50' : 'border-transparent hover:bg-gray-200'}`}>{emoji}</button>))}</div>
+                      <button onClick={handleAddStudent} disabled={isSaving || !newStudentName} className="w-full bg-purple-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-purple-700 transition disabled:opacity-50 flex items-center justify-center gap-2">{isSaving ? 'กำลังบันทึก...' : <><Save size={18} /> บันทึกข้อมูล</>}</button>
                     </div>
-                  ) : (<div className="text-center text-gray-400"><div className="bg-gray-100 w-32 h-48 rounded-xl mx-auto mb-4 border-2 border-dashed border-gray-300 flex items-center justify-center"><UserPlus size={40} className="opacity-20" /></div><p>กรอกชื่อด้านซ้ายเพื่อสร้างรหัส</p></div>)}
+                    <div className="mt-6">
+                      <div className="flex justify-between items-center mb-2"><h4 className="text-sm font-bold text-gray-500">รายชื่อนักเรียน ({students.length})</h4><button onClick={loadData} className="text-purple-600 hover:bg-purple-50 p-1 rounded"><RefreshCw size={14}/></button></div>
+                      <div className="max-h-60 overflow-y-auto border border-gray-100 rounded-xl bg-white">
+                          {students.map(s => (
+                              <div key={s.id} className="flex items-center p-3 border-b last:border-0 hover:bg-gray-50 gap-3">
+                                  <div className="flex-shrink-0 w-10 h-10 bg-purple-50 rounded-full flex items-center justify-center text-xl border border-purple-100">{s.avatar}</div>
+                                  <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-bold text-gray-800 truncate">{s.name || 'ไม่ระบุชื่อ'}</p>
+                                      <span className="text-[10px] text-white bg-purple-400 px-2 py-0.5 rounded-full">{s.grade}</span>
+                                  </div>
+                                  <div className="flex-shrink-0"><span className="font-mono text-xs font-medium text-purple-600 bg-white px-2 py-1 rounded border border-purple-200 shadow-sm">{s.id}</span></div>
+                              </div>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-center justify-center mt-6 md:mt-0">
+                    {createdStudent ? (
+                      <div className="bg-gradient-to-br from-blue-500 to-purple-600 p-1 rounded-3xl shadow-2xl w-full max-w-xs animate-fade-in scale-100 transition-transform">
+                        <div className="bg-white rounded-[22px] p-6 text-center relative overflow-hidden">
+                          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-400 to-purple-500"></div>
+                          <h4 className="text-gray-500 text-xs uppercase tracking-widest font-bold mb-4">บัตรประจำตัวนักเรียน</h4>
+                          <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center text-6xl mx-auto mb-4 shadow-inner">{createdStudent.avatar}</div>
+                          <h3 className="text-xl font-bold text-gray-800 mb-1">{createdStudent.name}</h3>
+                          <div className="flex justify-center gap-2 mb-6">
+                              <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-xs font-bold">{createdStudent.grade}</span>
+                              <span className="text-gray-500 text-xs">{createdStudent.school}</span>
+                          </div>
+                          <div className="bg-gray-100 rounded-xl p-3 mb-2"><span className="block text-xs text-gray-400 mb-1">รหัสเข้าใช้งาน (ID)</span><span className="text-3xl font-mono font-black text-purple-600 tracking-widest">{createdStudent.id}</span></div>
+                        </div>
+                        <div className="text-center mt-4"><button onClick={() => setCreatedStudent(null)} className="text-white/90 text-sm font-bold underline hover:text-white">+ เพิ่มคนต่อไป</button></div>
+                      </div>
+                    ) : (<div className="text-center text-gray-400"><div className="bg-gray-100 w-32 h-48 rounded-xl mx-auto mb-4 border-2 border-dashed border-gray-300 flex items-center justify-center"><UserPlus size={40} className="opacity-20" /></div><p>กรอกชื่อด้านซ้ายเพื่อสร้างรหัส</p></div>)}
+                  </div>
                 </div>
-              </div>
             )}
+
             {activeTab === 'assignments' && (
               <div className="max-w-4xl mx-auto">
                  <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 mb-8">
@@ -314,7 +336,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                         </div>
                     </div>
                  </div>
-    
+
                  <div className="flex justify-between items-center mb-4">
                     <h3 className="text-lg font-bold text-gray-800">รายการการบ้านที่สั่งแล้ว ({assignments.length})</h3>
                     <button onClick={loadData} className="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-lg text-gray-600 flex items-center gap-1"><RefreshCw size={14}/> รีเฟรช</button>
@@ -357,6 +379,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                  )}
               </div>
             )}
+
+            {/* Tab 3: Stats */}
             {activeTab === 'stats' && (
               <div>
                 <div className="flex justify-between items-center mb-4">
@@ -387,6 +411,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 )}
               </div>
             )}
+            
+            {/* Tab 4: Question Bank */}
             {activeTab === 'questions' && (
                <div className="max-w-6xl mx-auto">
                   <div className="flex justify-between items-center mb-6">
@@ -607,3 +633,5 @@ const TabButton = ({ active, onClick, icon, label }: any) => (
 );
 
 export default TeacherDashboard;
+]]></content>
+</change>
