@@ -1,16 +1,17 @@
 
 import React, { useState, useEffect } from 'react';
-import { Question, Subject } from '../types';
-import { ArrowLeft, Play, Layers, Shuffle, Clock, GraduationCap } from 'lucide-react';
+import { Question, Subject, Teacher } from '../types';
+import { ArrowLeft, Play, Layers, Shuffle, GraduationCap } from 'lucide-react';
 import { db } from '../services/firebaseConfig';
 import { fetchAppData } from '../services/api';
 
 interface GameSetupProps {
+  teacher: Teacher; 
   onBack: () => void;
-  onGameCreated: () => void;
+  onGameCreated: (roomCode: string) => void; // ✅ Callback with roomCode
 }
 
-const GameSetup: React.FC<GameSetupProps> = ({ onBack, onGameCreated }) => {
+const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated }) => {
   const [allQuestions, setAllQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -20,7 +21,6 @@ const GameSetup: React.FC<GameSetupProps> = ({ onBack, onGameCreated }) => {
   const [timePerQuestion, setTimePerQuestion] = useState<number>(20);
   const [selectedGrade, setSelectedGrade] = useState<string>('P6');
 
-  // ตัวแปลงรหัสชั้นเป็นภาษาไทย
   const GRADE_LABELS: Record<string, string> = {
       'P1': 'ป.1', 'P2': 'ป.2', 'P3': 'ป.3',
       'P4': 'ป.4', 'P5': 'ป.5', 'P6': 'ป.6'
@@ -34,6 +34,11 @@ const GameSetup: React.FC<GameSetupProps> = ({ onBack, onGameCreated }) => {
     };
     loadQuestions();
   }, []);
+
+  const generateRoomCode = () => {
+      // สุ่มเลข 6 หลัก (100000 - 999999)
+      return Math.floor(100000 + Math.random() * 900000).toString();
+  };
 
   const handleCreateGame = async () => {
     setLoading(true);
@@ -58,23 +63,53 @@ const GameSetup: React.FC<GameSetupProps> = ({ onBack, onGameCreated }) => {
         return;
     }
 
-    // ✅ CLEAN DATA: ตรวจสอบความถูกต้องของ ID ก่อนส่งขึ้น Firebase
-    const sanitizedQuestions = finalQuestions.map(q => {
-        // ตรวจสอบว่า choices มี id หรือไม่ ถ้าไม่มีให้สร้างใหม่
-        const newChoices = q.choices.map((c, idx) => ({
-            id: c.id ? String(c.id) : String(idx + 1), // ถ้าไม่มี ID ให้ใช้ลำดับ 1,2,3,4
+    // ✅ REPAIR DATA
+    const sanitizedQuestions = finalQuestions.map((q, idx) => {
+        const choices = q.choices.map((c, cIdx) => ({
+            id: String(c.id && c.id.length > 0 ? c.id : `choice_${idx}_${cIdx+1}`).trim(),
             text: c.text || '',
             image: c.image || ''
         }));
 
+        let correctId = String(q.correctChoiceId).trim();
+        let foundMatch = false;
+
+        if (choices.some(c => c.id === correctId)) {
+            foundMatch = true;
+        }
+
+        if (!foundMatch) {
+            const numericIndex = parseInt(correctId);
+            if (!isNaN(numericIndex) && numericIndex >= 1 && numericIndex <= choices.length) {
+                correctId = choices[numericIndex - 1].id;
+                foundMatch = true;
+            }
+        }
+
+        if (!foundMatch) {
+            const map: Record<string, number> = { 
+                'A':0, 'B':1, 'C':2, 'D':3, 
+                'a':0, 'b':1, 'c':2, 'd':3,
+                'ก':0, 'ข':1, 'ค':2, 'ง':3 
+            };
+            const cleanKey = correctId.replace('.', ''); 
+            if (map[cleanKey] !== undefined && map[cleanKey] < choices.length) {
+                correctId = choices[map[cleanKey]].id;
+                foundMatch = true;
+            }
+        }
+
+        if (!foundMatch && choices.length > 0) {
+            correctId = choices[0].id; 
+        }
+
         return {
-            id: String(q.id),
-            subject: q.subject || '',
+            id: String(q.id || `q${idx}`),
+            subject: q.subject || 'GENERAL',
             text: q.text || '',
             image: q.image || '',
-            choices: newChoices,
-            // แปลงเฉลยเป็น String เสมอ เพื่อลดปัญหา Type Mismatch
-            correctChoiceId: String(q.correctChoiceId), 
+            choices: choices,
+            correctChoiceId: correctId,
             explanation: q.explanation || '',
             grade: q.grade || 'ALL',
             school: q.school || 'CENTER'
@@ -82,27 +117,27 @@ const GameSetup: React.FC<GameSetupProps> = ({ onBack, onGameCreated }) => {
     });
 
     try {
-        // Reset Scores
-        await db.ref('game/scores').set({});
+        // ✅ สร้างรหัสห้องแบบสุ่ม
+        const roomCode = generateRoomCode();
+        const roomPath = `games/${roomCode}`;
         
-        // Upload Questions
-        await db.ref('questions').set(sanitizedQuestions);
-        
-        // Set Game State
-        await db.ref('gameState').set({
+        await db.ref(`${roomPath}/scores`).set({});
+        await db.ref(`${roomPath}/questions`).set(sanitizedQuestions);
+        await db.ref(`${roomPath}/gameState`).set({
             status: 'LOBBY',
             currentQuestionIndex: 0,
             totalQuestions: sanitizedQuestions.length,
             subject: selectedSubject === 'MIXED' ? 'รวมวิชา' : selectedSubject,
             grade: selectedGrade,
             timePerQuestion: timePerQuestion,
-            timer: timePerQuestion
+            timer: timePerQuestion,
+            schoolId: teacher.school, // ✅ บันทึกชื่อโรงเรียนเจ้าของห้อง
+            teacherName: teacher.name
         });
-
-        onGameCreated(); 
+        
+        onGameCreated(roomCode); // ส่งรหัสห้องกลับไป
     } catch (e) {
         alert("Firebase Error: " + e);
-        console.error(e);
     } finally {
         setLoading(false);
     }
@@ -119,6 +154,9 @@ const GameSetup: React.FC<GameSetupProps> = ({ onBack, onGameCreated }) => {
             <h2 className="text-2xl font-bold text-gray-800 flex items-center justify-center gap-2">
                 <Layers className="text-purple-600" /> ตั้งค่าเกมการแข่งขัน
             </h2>
+            <div className="text-sm text-gray-500 mt-2 bg-purple-50 inline-block px-3 py-1 rounded-full border border-purple-100">
+                โรงเรียน: {teacher.school}
+            </div>
         </div>
 
         {/* 0. เลือกระดับชั้น */}

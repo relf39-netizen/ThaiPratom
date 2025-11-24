@@ -1,10 +1,11 @@
+
 import { Student, Question, Teacher, Subject, ExamResult, Assignment } from '../types'; 
 import { MOCK_STUDENTS, MOCK_QUESTIONS } from '../constants';
 
 // ---------------------------------------------------------------------------
-// 🟢 Web App URL (เปลี่ยนเป็นของท่าน)
+// 🟢 Web App URL
 // ---------------------------------------------------------------------------
-const GOOGLE_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbxuK3FqdTahB8trhbMoD3MbkfvKO774Uxq1D32s3vvjmDxT4IMOfaprncIvD89zbTDj/exec'; 
+const GOOGLE_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbxmfNPB5_T5-BrAJtrlI4PPEPO8z4Y1vZ4xJyJmCzXj1aE9LLY4RDPhcAhYKY-pvqY_/exec'; 
 
 export interface AppData {
   students: Student[];
@@ -13,7 +14,7 @@ export interface AppData {
   assignments: Assignment[];
 }
 
-// 🔄 ฟังก์ชันช่วยแปลงรหัสวิชา (สำคัญมาก)
+// 🔄 Helper: Normalize Subject
 const normalizeSubject = (rawSubject: string): Subject => {
   const s = String(rawSubject).trim().toUpperCase();
   if (s === 'MATH' || s === 'คณิตศาสตร์' || s === 'คณิต') return Subject.MATH;
@@ -23,7 +24,7 @@ const normalizeSubject = (rawSubject: string): Subject => {
   return Subject.MATH; 
 };
 
-// 🔄 แปลงกลับเป็นรหัสภาษาอังกฤษสำหรับบันทึก
+// 🔄 Helper: Convert Subject to Code
 const convertToCode = (subjectEnum: Subject): string => {
     if (subjectEnum === Subject.MATH) return 'MATH';
     if (subjectEnum === Subject.THAI) return 'THAI';
@@ -32,7 +33,7 @@ const convertToCode = (subjectEnum: Subject): string => {
     return 'MATH';
 };
 
-// Login ครู
+// ✅ Teacher Login
 export const teacherLogin = async (username: string, password: string): Promise<{success: boolean, teacher?: Teacher}> => {
   if (!GOOGLE_SCRIPT_URL) return { success: false };
   try {
@@ -45,7 +46,20 @@ export const teacherLogin = async (username: string, password: string): Promise<
   }
 };
 
-// จัดการครู (Admin)
+// ✅ Get All Teachers (Admin)
+export const getAllTeachers = async (): Promise<Teacher[]> => {
+  if (!GOOGLE_SCRIPT_URL) return [];
+  try {
+    const response = await fetch(`${GOOGLE_SCRIPT_URL}?type=get_teachers`);
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    console.error("Get teachers error", e);
+    return [];
+  }
+};
+
+// ✅ Manage Teacher (Admin: Add/Edit/Delete)
 export const manageTeacher = async (data: any) => {
     if (!GOOGLE_SCRIPT_URL) return { success: false, message: 'No URL' };
     try {
@@ -57,7 +71,7 @@ export const manageTeacher = async (data: any) => {
     }
 };
 
-// ดึงข้อมูล Dashboard ครู
+// ✅ Get Teacher Dashboard Data
 export const getTeacherDashboard = async (school: string) => {
   if (!GOOGLE_SCRIPT_URL) return { students: [], results: [], assignments: [], questions: [] };
   
@@ -65,12 +79,16 @@ export const getTeacherDashboard = async (school: string) => {
     const response = await fetch(`${GOOGLE_SCRIPT_URL}?type=teacher_data&school=${school}`);
     const data = await response.json();
 
-    // แปลงข้อมูลข้อสอบ
     const cleanQuestions = (data.questions || []).map((q: any) => ({
       ...q,
       id: String(q.id).trim(),
+      text: String(q.text || ''), // ✅ Force String
       subject: normalizeSubject(q.subject),
-      choices: q.choices.map((c: any) => ({ ...c, id: String(c.id) })),
+      choices: q.choices.map((c: any) => ({ 
+          ...c, 
+          id: String(c.id), 
+          text: String(c.text || '') // ✅ Force String to prevent numeric issues
+      })),
       correctChoiceId: String(q.correctChoiceId),
       grade: q.grade || 'ALL',
       school: q.school || 'CENTER'
@@ -83,6 +101,7 @@ export const getTeacherDashboard = async (school: string) => {
   }
 }
 
+// ✅ Add New Student
 export const addStudent = async (name: string, school: string, avatar: string, grade: string): Promise<Student | null> => {
   if (!GOOGLE_SCRIPT_URL) return null;
   try {
@@ -94,7 +113,7 @@ export const addStudent = async (name: string, school: string, avatar: string, g
   }
 };
 
-// ✅ เพิ่มข้อสอบ (ส่ง school ไปด้วย)
+// ✅ Add Question to Question Bank
 export const addQuestion = async (question: any): Promise<boolean> => {
   if (!GOOGLE_SCRIPT_URL) return false;
   try {
@@ -108,7 +127,7 @@ export const addQuestion = async (question: any): Promise<boolean> => {
       correct: question.correct,
       explanation: question.explanation,
       grade: question.grade,
-      school: question.school || '' // ✅ ส่งชื่อโรงเรียน
+      school: question.school || ''
     });
     await fetch(`${GOOGLE_SCRIPT_URL}?${params.toString()}`);
     return true;
@@ -117,6 +136,7 @@ export const addQuestion = async (question: any): Promise<boolean> => {
   }
 };
 
+// ✅ Add Assignment
 export const addAssignment = async (school: string, subject: string, questionCount: number, deadline: string, createdBy: string): Promise<boolean> => {
   if (!GOOGLE_SCRIPT_URL) return false;
   try {
@@ -128,6 +148,7 @@ export const addAssignment = async (school: string, subject: string, questionCou
   }
 };
 
+// ✅ Save Score
 export const saveScore = async (studentId: string, studentName: string, school: string, score: number, total: number, subject: string, assignmentId?: string) => {
   if (!GOOGLE_SCRIPT_URL) return false;
   try {
@@ -140,6 +161,7 @@ export const saveScore = async (studentId: string, studentName: string, school: 
   }
 }
 
+// ✅ Fetch Initial App Data
 export const fetchAppData = async (): Promise<AppData> => {
   if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === '') {
     return { students: MOCK_STUDENTS, questions: MOCK_QUESTIONS, results: [], assignments: [] };
@@ -148,7 +170,6 @@ export const fetchAppData = async (): Promise<AppData> => {
     const targetUrl = `${GOOGLE_SCRIPT_URL}?type=json`;
     const response = await fetch(targetUrl);
     const textData = await response.text();
-
     if (textData.trim().startsWith('<')) throw new Error('Invalid JSON response');
     const data = JSON.parse(textData);
     
@@ -157,8 +178,15 @@ export const fetchAppData = async (): Promise<AppData> => {
     }));
     
     const cleanQuestions = (data.questions || []).map((q: any) => ({
-      ...q, id: String(q.id).trim(), subject: normalizeSubject(q.subject),
-      choices: q.choices.map((c: any) => ({ ...c, id: String(c.id) })),
+      ...q, 
+      id: String(q.id).trim(), 
+      text: String(q.text || ''), // ✅ Force String
+      subject: normalizeSubject(q.subject),
+      choices: q.choices.map((c: any) => ({ 
+          ...c, 
+          id: String(c.id),
+          text: String(c.text || '') // ✅ Force String
+      })),
       correctChoiceId: String(q.correctChoiceId),
       grade: q.grade || 'ALL',
       school: q.school
@@ -173,7 +201,6 @@ export const fetchAppData = async (): Promise<AppData> => {
       timestamp: new Date(r.timestamp).getTime(),
       assignmentId: r.assignmentId !== '-' ? r.assignmentId : undefined
     }));
-    
     const cleanAssignments = (data.assignments || []).map((a: any) => ({
       id: String(a.id), school: String(a.school), subject: normalizeSubject(a.subject),
       questionCount: Number(a.questionCount), deadline: String(a.deadline).split('T')[0], createdBy: String(a.createdBy)

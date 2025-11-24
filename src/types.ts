@@ -1,24 +1,21 @@
-export interface Teacher {
-  id?: number; // New
-  username?: string; // New
-  password?: string; // New
-  name: string;
-  school: string;
-  role?: string; // ADMIN or TEACHER
-  gradeLevel?: string; 
-}
-// ... (อื่นๆ คงเดิม)
+
 export interface Student {
   id: string;
   name: string;
   school?: string; 
   avatar: string; 
   stars: number; 
+  grade?: string; 
 }
 
 export interface Teacher {
+  id?: number;
+  username?: string;
+  password?: string;
   name: string;
   school: string;
+  role?: string; // ADMIN or TEACHER
+  gradeLevel?: string; 
 }
 
 export enum Subject {
@@ -40,6 +37,8 @@ export interface Question {
   }[];
   correctChoiceId: string;
   explanation: string;
+  grade?: string; 
+  school?: string; 
 }
 
 export interface ExamResult {
@@ -49,7 +48,7 @@ export interface ExamResult {
   score: number;
   totalQuestions: number;
   timestamp: number;
-  assignmentId?: string; // ✅ ระบุว่าเป็นคะแนนจากการบ้านชิ้นไหน
+  assignmentId?: string; 
 }
 
 export interface Assignment {
@@ -57,9 +56,8 @@ export interface Assignment {
   school: string;
   subject: Subject;
   questionCount: number;
-  deadline: string; // YYYY-MM-DD
+  deadline: string; 
   createdBy: string;
 }
 
 export type GameState = 'LOBBY' | 'COUNTDOWN' | 'QUESTION' | 'LEADERBOARD' | 'FINISHED';
-

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import Layout from './components/Layout';
 import Login from './views/Login';
@@ -22,7 +23,13 @@ const App: React.FC = () => {
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
   const [currentAssignment, setCurrentAssignment] = useState<Assignment | null>(null);
   const [isMusicOn, setIsMusicOn] = useState(true);
-  const [lastScore, setLastScore] = useState<{score: number, total: number, isHomework: boolean} | null>(null);
+  
+  // State to hold result data
+  const [lastScore, setLastScore] = useState<{score: number, total: number, isHomework: boolean, isGame: boolean} | null>(null);
+  
+  // ✅ New State for Game PIN
+  const [gameRoomCode, setGameRoomCode] = useState<string>('');
+  
   const [students, setStudents] = useState<Student[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [examResults, setExamResults] = useState<ExamResult[]>([]);
@@ -31,25 +38,21 @@ const App: React.FC = () => {
 
   useEffect(() => {
     let isMounted = true;
-
     const initData = async () => {
-      console.log("App starting...");
-      
-      // Timeout: ถ้า 3 วินาทีไม่เสร็จ ให้ตัดเข้า Mock ทันที (แก้จอฟ้า)
-      const timer = setTimeout(() => {
+      console.log("System Starting...");
+      const safetyTimer = setTimeout(() => {
         if (isMounted && isLoading) {
-          console.warn("Loading timeout, forcing mock data...");
+          console.warn("Loading taking too long, switching to fallback data...");
           setStudents(MOCK_STUDENTS);
           setQuestions(MOCK_QUESTIONS);
           setIsLoading(false);
         }
-      }, 3000);
+      }, 2500);
 
       try {
         const data = await fetchAppData();
         if (isMounted) {
-          clearTimeout(timer); // โหลดเสร็จก่อน ยกเลิก timeout
-          
+          clearTimeout(safetyTimer);
           if (data.students.length > 0) {
              setStudents(data.students);
              setQuestions(data.questions);
@@ -59,36 +62,68 @@ const App: React.FC = () => {
              setStudents(MOCK_STUDENTS);
              setQuestions(MOCK_QUESTIONS);
           }
+          setIsLoading(false);
         }
       } catch (error) {
-        console.error("App Init Error:", error);
+        console.error("Failed to load data", error);
         if (isMounted) {
            setStudents(MOCK_STUDENTS);
            setQuestions(MOCK_QUESTIONS);
+           setIsLoading(false);
         }
-      } finally {
-        // ✅ สำคัญมาก: บรรทัดนี้ทำให้จอฟ้าหายไปแน่นอน
-        if (isMounted) setIsLoading(false);
       }
     };
-
     initData();
     return () => { isMounted = false; };
   }, []);
 
   const handleLogin = (student: Student) => { setCurrentUser(student); setCurrentPage('dashboard'); };
   const handleTeacherLoginSuccess = (teacher: Teacher) => { setCurrentTeacher(teacher); setCurrentPage('teacher-dashboard'); };
-  const handleLogout = () => { setCurrentUser(null); setCurrentTeacher(null); setCurrentPage('login'); setSelectedSubject(null); setCurrentAssignment(null); };
+  const handleLogout = () => { 
+      setCurrentUser(null); 
+      setCurrentTeacher(null); 
+      setCurrentPage('login'); 
+      setSelectedSubject(null); 
+      setCurrentAssignment(null);
+      setGameRoomCode(''); 
+  };
 
-  const handleFinishExam = async (score: number, total: number) => {
+  const handleFinishExam = async (score: number, total: number, source: 'practice' | 'game' = 'practice') => {
     const isHomework = !!currentAssignment;
-    setLastScore({ score, total, isHomework });
+    const isGame = source === 'game';
+    setLastScore({ score, total, isHomework, isGame });
     setCurrentPage('results');
+    
     if (currentUser) {
-       const subjectToSave = currentAssignment ? currentAssignment.subject : (selectedSubject || 'รวมวิชา');
-       await saveScore(currentUser.id, currentUser.name, currentUser.school || '-', score, total, subjectToSave, currentAssignment ? currentAssignment.id : undefined);
+       // ถ้ามาจากเกม ให้เติม [GAME] นำหน้าวิชา เพื่อแยกใน Google Sheet
+       let subjectToSave = currentAssignment ? currentAssignment.subject : (selectedSubject || 'รวมวิชา');
+       if (isGame) {
+           subjectToSave = `[GAME] ${subjectToSave}`;
+       }
+       
+       // บันทึกคะแนนลง Google Sheet
+       await saveScore(
+         currentUser.id, 
+         currentUser.name, 
+         currentUser.school || '-', 
+         score, 
+         total, 
+         subjectToSave, 
+         currentAssignment ? currentAssignment.id : undefined
+       );
+       
+       // อัปเดตดาว (เฉพาะถ้าไม่ใช่เกม หรือถ้าต้องการให้เกมได้ดาวด้วยก็ปล่อยไว้)
        setCurrentUser(prev => prev ? { ...prev, stars: prev.stars + score } : null);
-       const newResult: ExamResult = { id: Math.random().toString(), studentId: currentUser.id, subject: subjectToSave as Subject, score: score, totalQuestions: total, timestamp: Date.now(), assignmentId: currentAssignment?.id };
+       
+       const newResult: ExamResult = { 
+         id: Math.random().toString(), 
+         studentId: currentUser.id, 
+         subject: subjectToSave as Subject, // บันทึกด้วยชื่อที่มี [GAME] เพื่อแยกใน Dashboard
+         score: score, 
+         totalQuestions: total, 
+         timestamp: Date.now(), 
+         assignmentId: currentAssignment?.id 
+       };
        setExamResults(prev => [...prev, newResult]);
        setCurrentAssignment(null);
     }
@@ -96,6 +131,12 @@ const App: React.FC = () => {
 
   const handleSelectSubject = (subject: Subject) => { setSelectedSubject(subject); setCurrentAssignment(null); setCurrentPage('practice'); };
   const handleStartAssignment = (assignment: Assignment) => { setCurrentAssignment(assignment); setSelectedSubject(assignment.subject); setCurrentPage('practice'); };
+
+  // ✅ เมื่อครูสร้างห้องเสร็จ
+  const handleGameCreated = (roomCode: string) => {
+      setGameRoomCode(roomCode);
+      setCurrentPage('teacher-game');
+  };
 
   if (isLoading) return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-blue-50 text-blue-600">
@@ -106,10 +147,14 @@ const App: React.FC = () => {
 
   if (currentPage === 'teacher-login') return <TeacherLogin onLoginSuccess={handleTeacherLoginSuccess} onBack={() => setCurrentPage('login')} />;
   if (currentPage === 'teacher-dashboard' && currentTeacher) return <TeacherDashboard teacher={currentTeacher} onLogout={handleLogout} onStartGame={() => setCurrentPage('game-setup')} />;
-  if (currentPage === 'game-setup') return <GameSetup onBack={() => setCurrentPage('teacher-dashboard')} onGameCreated={() => setCurrentPage('teacher-game')} />;
+  
+  // ✅ ส่ง handleGameCreated ไปให้ GameSetup
+  if (currentPage === 'game-setup' && currentTeacher) return <GameSetup teacher={currentTeacher} onBack={() => setCurrentPage('teacher-dashboard')} onGameCreated={handleGameCreated} />;
+  
   if (currentPage === 'teacher-game' && currentTeacher) {
       const teacherAsStudent: Student = { id: '99999', name: currentTeacher.name, school: currentTeacher.school, avatar: '👨‍🏫', stars: 0, grade: 'TEACHER' };
-      return <GameMode student={teacherAsStudent} onExit={() => setCurrentPage('teacher-dashboard')} />;
+      // ✅ ส่ง initialRoomCode ให้ครูเข้าห้องตัวเองได้เลย
+      return <GameMode student={teacherAsStudent} initialRoomCode={gameRoomCode} onExit={() => setCurrentPage('teacher-dashboard')} />;
   }
   
   if (currentPage === 'login' && !currentUser) return <Login onLogin={handleLogin} onTeacherLoginClick={() => setCurrentPage('teacher-login')} students={students} />;
@@ -122,13 +167,25 @@ const App: React.FC = () => {
           case 'select-subject': return <SubjectSelection onSelectSubject={handleSelectSubject} onBack={() => setCurrentPage('dashboard')} />;
           case 'practice':
             let qList = questions;
-            if (currentUser && currentUser.grade) { qList = questions.filter(q => q.grade === currentUser.grade || q.grade === 'ALL'); }
+            if (currentUser && currentUser.grade) {
+                qList = questions.filter(q => q.grade === currentUser.grade || q.grade === 'ALL');
+            }
             const activeSubject = currentAssignment ? currentAssignment.subject : selectedSubject;
             if (activeSubject) qList = qList.filter(q => q.subject === activeSubject);
             if (currentAssignment && currentAssignment.questionCount < qList.length) qList = qList.slice(0, currentAssignment.questionCount);
-            return <PracticeMode questions={qList} onFinish={handleFinishExam} onBack={() => setCurrentPage('dashboard')} />;
-          case 'game': return <GameMode student={currentUser!} onExit={() => setCurrentPage('dashboard')} />;
-          case 'results': return <Results score={lastScore?.score || 0} total={lastScore?.total || 0} isHomework={lastScore?.isHomework} onRetry={() => setCurrentPage('select-subject')} onHome={() => setCurrentPage('dashboard')} />;
+            return <PracticeMode questions={qList} onFinish={(s, t) => handleFinishExam(s, t, 'practice')} onBack={() => setCurrentPage('dashboard')} />;
+          
+          case 'game': 
+            // ✅ นักเรียนต้องกรอกรหัสเอง ไม่ส่ง initialRoomCode
+            return (
+                <GameMode 
+                    student={currentUser!} 
+                    onExit={() => setCurrentPage('dashboard')} 
+                    onFinish={(score, total) => handleFinishExam(score, total, 'game')}
+                />
+            );
+          
+          case 'results': return <Results score={lastScore?.score || 0} total={lastScore?.total || 0} isHomework={lastScore?.isHomework} isGame={lastScore?.isGame} onRetry={() => setCurrentPage('select-subject')} onHome={() => setCurrentPage('dashboard')} />;
           case 'stats': return <Stats examResults={examResults} studentId={currentUser!.id} onBack={() => setCurrentPage('dashboard')} />;
           default: return <Dashboard student={currentUser!} onNavigate={setCurrentPage} />;
         }
