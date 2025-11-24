@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Student, Question } from '../types';
-import { Users, Trophy, Play, CheckCircle, Volume2, VolumeX, Crown, Music, Zap, AlertTriangle, Clock } from 'lucide-react';
+import { Users, Trophy, Play, CheckCircle, Volume2, VolumeX, Crown, Music, Zap, AlertTriangle } from 'lucide-react';
 import { speak, playBGM, stopBGM, playSFX, toggleMuteSystem } from '../utils/soundUtils';
 import { db, firebase } from '../services/firebaseConfig';
 
@@ -22,7 +22,8 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
   const [connectionError, setConnectionError] = useState(false);
   
   const [isMuted, setIsMuted] = useState(false);
-  const [audioEnabled, setAudioEnabled] = useState(false); // เช็คว่าผู้ใช้กดเปิดเสียงหรือยัง
+  const [audioEnabled, setAudioEnabled] = useState(false);
+  
   const [timer, setTimer] = useState(0);
   const [maxTime, setMaxTime] = useState(20);
   
@@ -33,14 +34,9 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
     const newState = !isMuted;
     setIsMuted(newState);
     toggleMuteSystem(newState);
-    
-    // ถ้ากดเปิดเสียง แล้วสถานะกำลังเล่น ให้เล่นเพลงทันที
-    if (!newState && status === 'PLAYING') {
-        playBGM('GAME');
-    }
+    if (!newState && status === 'PLAYING') playBGM('GAME');
   };
 
-  // ฟังก์ชันบังคับเปิดเสียง (ต้องกดปุ่มนี้ก่อนเล่น)
   const enableAudio = () => {
     setAudioEnabled(true);
     setIsMuted(false);
@@ -49,50 +45,37 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
     speak("ยินดีต้อนรับสู่สนามสอบครับ");
   };
 
-  // จัดการเสียงตามสถานะเกม
+  // Sound Logic
   useEffect(() => {
     if (!audioEnabled) return;
-    
-    if (status === 'LOBBY') {
-        playBGM('LOBBY');
-    } else if (status === 'COUNTDOWN') { 
-        stopBGM(); 
-        playSFX('COUNTDOWN'); 
-    } else if (status === 'PLAYING') {
-        playBGM('GAME'); 
-    } else if (status === 'FINISHED') {
-        playBGM('VICTORY');
-    }
-    
+    if (status === 'LOBBY') playBGM('LOBBY');
+    else if (status === 'COUNTDOWN') { stopBGM(); playSFX('COUNTDOWN'); }
+    else if (status === 'PLAYING') playBGM('GAME');
+    else if (status === 'FINISHED') playBGM('VICTORY');
     return () => {};
   }, [status, audioEnabled]);
 
-  useEffect(() => {
-      return () => stopBGM();
-  }, []);
+  useEffect(() => { return () => stopBGM(); }, []);
 
-  // Firebase Listeners
+  // Firebase Logic
   useEffect(() => {
     const connectedRef = db.ref(".info/connected");
     connectedRef.on('value', (snap: any) => setConnectionError(snap.val() === false));
 
-    // 1. ฟังสถานะเกม (เพื่อเช็คว่ามีห้องไหม)
     const gameStateRef = db.ref('gameState');
     gameStateRef.on('value', (snapshot: any) => {
       const data = snapshot.val();
       if (data) {
-        // ถ้ามีข้อมูล แสดงว่ามีห้อง
         setStatus(data.status || 'LOBBY');
         setCurrentQuestionIndex(data.currentQuestionIndex || 0);
         setTimer(data.timer || 0);
         if (data.timePerQuestion) setMaxTime(data.timePerQuestion);
         
-        // เมื่อรู้ว่ามีห้องแล้ว ค่อยลงทะเบียนตัวเอง (เฉพาะนักเรียน)
+        // ลงทะเบียนเฉพาะนักเรียน
         if (!isAdmin) {
            registerPlayer();
         }
       } else {
-        // ถ้าไม่มีข้อมูล gameState แปลว่ายังไม่เปิดห้อง
         setStatus('WAITING');
       }
     });
@@ -111,14 +94,16 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
     const playersRef = db.ref('game/players');
     playersRef.on('value', (snap: any) => { 
         if(snap.val()) {
-             // กรองเอาเฉพาะคนที่ไม่ใช่ Admin (เผื่อมีตกค้าง)
             const allPlayers = Object.values(snap.val());
-            setPlayers(allPlayers.filter((p:any) => p.name !== undefined && String(p.id) !== '99999'));
+            setPlayers(allPlayers.filter((p:any) => p.name !== undefined));
         }
     });
     
     const scoresRef = db.ref('game/scores');
-    scoresRef.on('value', (snap: any) => { if(snap.val()) setScores(snap.val()); });
+    scoresRef.on('value', (snap: any) => { 
+        // รับค่าคะแนนและอัปเดตทันที (ใส่ {} กัน error)
+        setScores(snap.val() || {}); 
+    });
 
     const questionsRef = db.ref('questions');
     questionsRef.on('value', (snap: any) => {
@@ -136,7 +121,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
       scoresRef.off();
       questionsRef.off();
     };
-  }, [student.id]);
+  }, [student.id, isAdmin]);
 
   useEffect(() => {
     setHasAnswered(false);
@@ -188,8 +173,8 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
 
   const handleStartGame = () => {
     if (questions.length === 0) return alert("ไม่พบข้อสอบ");
-    db.ref('gameState').update({ status: 'COUNTDOWN' });
     db.ref('game/scores').set({});
+    db.ref('gameState').update({ status: 'COUNTDOWN' });
   };
 
   const handleReset = () => {
@@ -204,12 +189,11 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
     const currentQ = questions[currentQuestionIndex];
     const isCorrect = choiceId === currentQ.correctChoiceId;
     
-    // สูตรคะแนน: 50 + (เวลาที่เหลือ * ตัวคูณ)
     const timeBonus = Math.round(50 * (timer / maxTime));
     const points = isCorrect ? (50 + timeBonus) : 0;
     
     if (points > 0) {
-       // ✅ ใช้ Transaction เพื่อให้คะแนนบวกทบกันแน่นอน 100% ไม่หาย
+       // ✅ ใช้ Transaction: บวกคะแนนที่เซิร์ฟเวอร์โดยตรง (แก้ปัญหาคะแนนไม่ขึ้น)
        db.ref(`game/scores/${student.id}`).transaction((currentScore) => {
          return (currentScore || 0) + points;
        });
@@ -219,17 +203,16 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
     }
   };
 
-  // ✅ คำนวณ Leaderboard แบบ Real-time
+  // ✅ Leaderboard: เรียงคะแนนมาก->น้อย (Real-time)
   const sortedPlayers = players
-    .filter(p => p.online)
+    .filter(p => p.online && String(p.id) !== '99999')
     .sort((a, b) => (scores[b.id] || 0) - (scores[a.id] || 0));
     
   const myRank = sortedPlayers.findIndex(p => p.id === student.id) + 1;
   const currentQuestion = questions[currentQuestionIndex];
 
-  if (connectionError) return <div className="p-10 text-center">Connection Error...</div>;
+  // --- RENDER ---
 
-  // --- หน้าจอ 1: รอห้อง (Waiting) ---
   if (status === 'WAITING') {
       return (
           <div className="flex flex-col items-center justify-center min-h-[80vh] text-center p-6">
@@ -245,38 +228,32 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
       );
   }
 
-  // --- หน้าจอ 2: ขอเปิดเสียง (Audio Overlay) ---
+  if (connectionError) return <div className="p-10 text-center">Connection Error...</div>;
+
   if (!audioEnabled) {
     return (
-        <div className="fixed inset-0 bg-gradient-to-br from-blue-600 to-purple-700 z-[999] flex flex-col items-center justify-center p-6 text-white text-center">
+        <div className="fixed inset-0 bg-gradient-to-br from-indigo-900 to-purple-900 z-[999] flex flex-col items-center justify-center p-6 text-white text-center">
             <div className="bg-white/10 p-6 rounded-full mb-6 animate-bounce">
                 <Volume2 size={64} />
             </div>
             <h2 className="text-3xl font-bold mb-4">พร้อมแข่งขันหรือยัง?</h2>
             <p className="mb-8 text-blue-100 max-w-md">
-                กรุณากดปุ่มด้านล่างเพื่อเข้าสู่ห้องเกม<br/>และเปิดระบบเสียงดนตรี
+                เกมนี้ใช้เสียงเพื่อความสนุก<br/>กดปุ่มด้านล่างเพื่อเริ่มได้เลย!
             </p>
-            <button 
-                onClick={enableAudio}
-                className="bg-yellow-400 text-yellow-900 px-8 py-4 rounded-full text-xl font-bold shadow-xl hover:scale-105 transition-transform flex items-center gap-3 animate-pulse cursor-pointer"
-            >
-                <Zap fill="currentColor" /> คลิกเพื่อเริ่มเกม (เปิดเสียง)
+            <button onClick={enableAudio} className="bg-yellow-400 text-yellow-900 px-10 py-4 rounded-full text-xl font-black shadow-[0_0_20px_rgba(250,204,21,0.6)] hover:scale-105 transition-transform flex items-center gap-3 animate-pulse cursor-pointer">
+                <Zap fill="currentColor" /> เข้าสู่สนามแข่ง
             </button>
-            <button onClick={onExit} className="mt-8 text-white/50 underline text-sm">
-                กลับหน้าหลัก
-            </button>
+            <button onClick={onExit} className="mt-8 text-white/50 underline text-sm">กลับหน้าหลัก</button>
         </div>
     );
   }
 
-  // --- หน้าจอ 3: Lobby ---
   if (status === 'LOBBY') {
     return (
       <div className="text-center py-10 min-h-[70vh] flex flex-col justify-center relative bg-gradient-to-b from-blue-50 to-white rounded-3xl">
         <button onClick={toggleSound} className={`absolute top-4 right-4 p-3 rounded-full shadow ${isMuted?'bg-gray-200':'bg-white'}`}>{isMuted?<VolumeX/>:<Volume2/>}</button>
         
         <h2 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600 mb-2 animate-bounce">🎮 ห้องพักนักกีฬา</h2>
-        <p className="text-gray-500 mb-8">เตรียมตัวให้พร้อม การแข่งขันกำลังจะเริ่ม...</p>
         
         <div className="bg-white p-6 rounded-3xl shadow-xl border-4 border-blue-100 max-w-3xl mx-auto w-full mb-8">
           <div className="text-2xl font-bold text-blue-600 mb-6 flex justify-center gap-2 bg-blue-50 py-2 rounded-xl"><Users/> ผู้เข้าแข่งขัน {sortedPlayers.length} คน</div>
@@ -295,21 +272,18 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
     );
   }
 
-  // --- หน้าจอ 4: Countdown ---
   if (status === 'COUNTDOWN') {
     return <div className="h-[70vh] flex flex-col items-center justify-center bg-black/5 rounded-3xl"><div className="text-2xl font-bold text-gray-500 mb-4">ARE YOU READY?</div><div className="text-[12rem] font-black text-transparent bg-clip-text bg-gradient-to-b from-blue-500 to-purple-600 animate-ping drop-shadow-2xl">{countdown}</div></div>;
   }
 
-  // --- หน้าจอ 5: Playing Game ---
   if (status === 'PLAYING') {
     const timePercent = (timer / maxTime) * 100;
     const timerColor = timePercent > 50 ? 'bg-green-500' : timePercent > 20 ? 'bg-yellow-500' : 'bg-red-600';
     
-    // --- 👨‍🏫 หน้าจอครู (Admin View) ---
+    // --- 👨‍🏫 หน้าจอครู (Admin View) - เห็นแต่ Leaderboard ---
     if (isAdmin) {
         return (
             <div className="max-w-4xl mx-auto pt-4 pb-20 relative">
-                {/* Admin Controls */}
                 <div className="flex justify-between items-center mb-6 bg-gray-900 text-white p-4 rounded-2xl shadow-lg">
                    <div className="flex items-center gap-4">
                        <div className={`font-mono font-black text-4xl ${timer<=5?'text-red-400 animate-pulse':''}`}>{timer}</div>
@@ -319,7 +293,6 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
                    <button onClick={handleReset} className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg text-xs font-bold">จบเกม</button>
                 </div>
 
-                {/* Big Leaderboard */}
                 <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border-4 border-indigo-100">
                     <div className="bg-indigo-50 p-4 flex justify-between font-bold text-indigo-900 text-sm uppercase tracking-wider">
                         <span>อันดับ</span>
@@ -350,7 +323,6 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
       <div className="max-w-4xl mx-auto pt-4 pb-20 relative">
         <button onClick={toggleSound} className={`fixed top-20 right-4 z-50 p-2 rounded-full shadow-lg ${isMuted ? 'bg-gray-200 text-gray-500' : 'bg-green-500 text-white animate-pulse'}`}>{isMuted ? <VolumeX size={24}/> : <Volume2 size={24}/>}</button>
         
-        {/* Timer Bar */}
         <div className="flex items-center gap-4 mb-6 bg-white p-4 rounded-2xl shadow-md border-b-4 border-gray-200">
             <div className="flex flex-col items-center">
                 <span className="text-xs text-gray-400 font-bold uppercase">QUESTION</span>
@@ -366,7 +338,6 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Question Area */}
             <div className="lg:col-span-2 space-y-6">
                 <div className="bg-white p-6 md:p-8 rounded-3xl shadow-xl border-b-8 border-blue-100 text-center relative overflow-hidden">
                     {timer <= 0 && <div className="absolute inset-0 bg-black/60 z-20 flex items-center justify-center backdrop-blur-sm"><span className="bg-red-600 text-white px-8 py-4 rounded-full text-3xl font-black shadow-2xl animate-bounce border-4 border-white">หมดเวลา!</span></div>}
@@ -384,7 +355,6 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
                 </div>
             </div>
 
-            {/* Leaderboard Area (Gradient Background) */}
             <div className="bg-gradient-to-b from-indigo-900 to-purple-900 rounded-3xl p-5 shadow-2xl border-4 border-indigo-800 text-white h-fit">
                 <h3 className="text-center font-black text-xl mb-4 flex items-center justify-center gap-2 uppercase tracking-wider text-yellow-400 drop-shadow-md">
                     <Trophy className="fill-yellow-400" /> Live Ranking
@@ -409,8 +379,8 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
     );
   }
 
-  // 6. Finished (Leaderboard รวม)
   if (status === 'FINISHED') {
+    const winner = sortedPlayers[0];
     return (
         <div className="max-w-4xl mx-auto py-10">
             <div className="text-center mb-10">
@@ -422,9 +392,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
                 <p className="text-gray-500 text-lg">และผู้ชนะคือ...</p>
             </div>
 
-            {/* Winner Podium */}
             <div className="flex justify-center items-end gap-4 mb-12 h-64 px-4">
-                {/* ที่ 2 */}
                 {sortedPlayers[1] && (
                     <div className="flex flex-col items-center w-1/3 animate-slide-up" style={{animationDelay: '0.2s'}}>
                         <div className="text-5xl mb-2">{sortedPlayers[1].avatar}</div>
@@ -432,7 +400,6 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
                         <div className="w-full bg-gray-300 h-32 rounded-t-2xl border-b-8 border-gray-400 flex items-center justify-center text-4xl font-black text-gray-500 shadow-lg">2</div>
                     </div>
                 )}
-                {/* ที่ 1 */}
                 {sortedPlayers[0] && (
                     <div className="flex flex-col items-center w-1/3 z-10 animate-slide-up">
                         <Crown className="text-yellow-500 mb-2 animate-pulse" size={40} />
@@ -444,7 +411,6 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
                         </div>
                     </div>
                 )}
-                {/* ที่ 3 */}
                 {sortedPlayers[2] && (
                     <div className="flex flex-col items-center w-1/3 animate-slide-up" style={{animationDelay: '0.4s'}}>
                         <div className="text-5xl mb-2">{sortedPlayers[2].avatar}</div>
@@ -454,7 +420,6 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
                 )}
             </div>
 
-            {/* Full List */}
             <div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
                 <div className="bg-gray-50 p-4 font-bold text-gray-500 flex justify-between px-8">
                     <span>อันดับ</span>
