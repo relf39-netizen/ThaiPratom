@@ -1,11 +1,13 @@
 
+// services/api.ts
+
 import { Student, Question, Teacher, Subject, ExamResult, Assignment } from '../types'; 
 import { MOCK_STUDENTS, MOCK_QUESTIONS } from '../constants';
 
 // ---------------------------------------------------------------------------
-// 🟢 Web App URL
+// 🟢 Web App URL (Updated)
 // ---------------------------------------------------------------------------
-const GOOGLE_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbxmfNPB5_T5-BrAJtrlI4PPEPO8z4Y1vZ4xJyJmCzXj1aE9LLY4RDPhcAhYKY-pvqY_/exec'; 
+export const GOOGLE_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbxuK3FqdTahB8trhbMoD3MbkfvKO774Uxq1D32s3vvjmDxT4IMOfaprncIvD89zbTDj/exec'; 
 
 export interface AppData {
   students: Student[];
@@ -13,6 +15,12 @@ export interface AppData {
   results: ExamResult[];
   assignments: Assignment[];
 }
+
+// 🔄 Helper: Add Timestamp to prevent caching
+const getUrl = (params: string) => {
+  const separator = params.includes('?') ? '&' : '?';
+  return `${GOOGLE_SCRIPT_URL}${params}${separator}_t=${Date.now()}`;
+};
 
 // 🔄 Helper: Normalize Subject
 const normalizeSubject = (rawSubject: string): Subject => {
@@ -37,7 +45,7 @@ const convertToCode = (subjectEnum: Subject): string => {
 export const teacherLogin = async (username: string, password: string): Promise<{success: boolean, teacher?: Teacher}> => {
   if (!GOOGLE_SCRIPT_URL) return { success: false };
   try {
-    const response = await fetch(`${GOOGLE_SCRIPT_URL}?type=teacher_login&username=${username}&password=${password}`);
+    const response = await fetch(getUrl(`?type=teacher_login&username=${username}&password=${password}`));
     const data = await response.json();
     return data;
   } catch (e) {
@@ -50,7 +58,7 @@ export const teacherLogin = async (username: string, password: string): Promise<
 export const getAllTeachers = async (): Promise<Teacher[]> => {
   if (!GOOGLE_SCRIPT_URL) return [];
   try {
-    const response = await fetch(`${GOOGLE_SCRIPT_URL}?type=get_teachers`);
+    const response = await fetch(getUrl(`?type=get_teachers`));
     const data = await response.json();
     return Array.isArray(data) ? data : [];
   } catch (e) {
@@ -64,11 +72,76 @@ export const manageTeacher = async (data: any) => {
     if (!GOOGLE_SCRIPT_URL) return { success: false, message: 'No URL' };
     try {
         const params = new URLSearchParams({ type: 'manage_teacher', ...data });
-        const response = await fetch(`${GOOGLE_SCRIPT_URL}?${params.toString()}`);
+        const response = await fetch(getUrl(`?${params.toString()}`));
         return await response.json();
     } catch (e) {
         return { success: false, message: 'Connection Error' };
     }
+};
+
+// ✅ Manage Student (Add/Edit/Delete)
+export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', id?: string, name?: string, school?: string, avatar?: string, grade?: string }): Promise<{success: boolean, student?: Student, message?: string, rawError?: boolean}> => {
+  if (!GOOGLE_SCRIPT_URL) return { success: false, message: 'No URL' };
+  
+  try {
+    const params = new URLSearchParams();
+    
+    // Add Legacy Support for 'add' action to match old Script if needed
+    if (data.action === 'add') {
+        params.append('type', 'add_student');
+    } else {
+        params.append('type', 'manage_student');
+    }
+    
+    Object.keys(data).forEach(key => {
+        if (data[key as keyof typeof data] !== undefined && data[key as keyof typeof data] !== null) {
+            params.append(key, String(data[key as keyof typeof data]));
+        }
+    });
+    
+    console.log("Calling API manageStudent:", params.toString());
+    const response = await fetch(getUrl(`?${params.toString()}`));
+    const text = await response.text();
+
+    try {
+        const result = JSON.parse(text);
+        
+        // Legacy format fix: 'add' usually returns { success:true, id:..., name:... } but UI needs { student: ... }
+        if (data.action === 'add' && result.success && !result.student && result.id) {
+             return { 
+                 success: true, 
+                 student: { id: result.id, name: result.name, school: result.school, avatar: result.avatar, stars: 0, grade: result.grade } 
+             };
+        }
+        
+        return result;
+
+    } catch (jsonError) {
+        console.warn("API returned non-JSON:", text);
+        return { 
+            success: false, 
+            message: 'Server returned non-JSON response',
+            rawError: true 
+        };
+    }
+
+  } catch (e) {
+    console.error("Manage student connection error", e);
+    return { success: false, message: 'Connection Error: ไม่สามารถเชื่อมต่อกับ Google Script ได้' };
+  }
+};
+
+// ✅ Add New Student (Legacy Wrapper)
+export const addStudent = async (name: string, school: string, avatar: string, grade: string): Promise<Student | null> => {
+  const result = await manageStudent({ action: 'add', name, school, avatar, grade });
+  if (result.success && result.student) {
+      return result.student;
+  }
+  // Fallback for legacy script return
+  if (result.success && (result as any).id) {
+      return result as any;
+  }
+  return null;
 };
 
 // ✅ Get Teacher Dashboard Data
@@ -76,18 +149,18 @@ export const getTeacherDashboard = async (school: string) => {
   if (!GOOGLE_SCRIPT_URL) return { students: [], results: [], assignments: [], questions: [] };
   
   try {
-    const response = await fetch(`${GOOGLE_SCRIPT_URL}?type=teacher_data&school=${school}`);
+    const response = await fetch(getUrl(`?type=teacher_data&school=${school}`));
     const data = await response.json();
 
     const cleanQuestions = (data.questions || []).map((q: any) => ({
       ...q,
       id: String(q.id).trim(),
-      text: String(q.text || ''), // ✅ Force String
+      text: String(q.text || ''), 
       subject: normalizeSubject(q.subject),
       choices: q.choices.map((c: any) => ({ 
           ...c, 
           id: String(c.id), 
-          text: String(c.text || '') // ✅ Force String to prevent numeric issues
+          text: String(c.text || '') 
       })),
       correctChoiceId: String(q.correctChoiceId),
       grade: q.grade || 'ALL',
@@ -101,19 +174,7 @@ export const getTeacherDashboard = async (school: string) => {
   }
 }
 
-// ✅ Add New Student
-export const addStudent = async (name: string, school: string, avatar: string, grade: string): Promise<Student | null> => {
-  if (!GOOGLE_SCRIPT_URL) return null;
-  try {
-    const url = `${GOOGLE_SCRIPT_URL}?type=add_student&name=${encodeURIComponent(name)}&school=${encodeURIComponent(school)}&avatar=${encodeURIComponent(avatar)}&grade=${encodeURIComponent(grade)}`;
-    const response = await fetch(url);
-    return await response.json();
-  } catch (e) {
-    return null;
-  }
-};
-
-// ✅ Add Question to Question Bank
+// ✅ Add Question
 export const addQuestion = async (question: any): Promise<boolean> => {
   if (!GOOGLE_SCRIPT_URL) return false;
   try {
@@ -129,7 +190,7 @@ export const addQuestion = async (question: any): Promise<boolean> => {
       grade: question.grade,
       school: question.school || ''
     });
-    await fetch(`${GOOGLE_SCRIPT_URL}?${params.toString()}`);
+    await fetch(getUrl(`?${params.toString()}`));
     return true;
   } catch (e) {
     return false;
@@ -140,8 +201,8 @@ export const addQuestion = async (question: any): Promise<boolean> => {
 export const addAssignment = async (school: string, subject: string, questionCount: number, deadline: string, createdBy: string): Promise<boolean> => {
   if (!GOOGLE_SCRIPT_URL) return false;
   try {
-    const url = `${GOOGLE_SCRIPT_URL}?type=add_assignment&school=${encodeURIComponent(school)}&subject=${encodeURIComponent(subject)}&questionCount=${questionCount}&deadline=${deadline}&createdBy=${encodeURIComponent(createdBy)}`;
-    await fetch(url);
+    const url = `?type=add_assignment&school=${encodeURIComponent(school)}&subject=${encodeURIComponent(subject)}&questionCount=${questionCount}&deadline=${deadline}&createdBy=${encodeURIComponent(createdBy)}`;
+    await fetch(getUrl(url));
     return true;
   } catch (e) {
     return false;
@@ -153,8 +214,8 @@ export const saveScore = async (studentId: string, studentName: string, school: 
   if (!GOOGLE_SCRIPT_URL) return false;
   try {
     const aidParam = assignmentId ? `&assignmentId=${encodeURIComponent(assignmentId)}` : '';
-    const url = `${GOOGLE_SCRIPT_URL}?type=save_score&studentId=${studentId}&studentName=${encodeURIComponent(studentName)}&school=${encodeURIComponent(school)}&score=${score}&total=${total}&subject=${encodeURIComponent(subject)}${aidParam}`;
-    await fetch(url);
+    const url = `?type=save_score&studentId=${studentId}&studentName=${encodeURIComponent(studentName)}&school=${encodeURIComponent(school)}&score=${score}&total=${total}&subject=${encodeURIComponent(subject)}${aidParam}`;
+    await fetch(getUrl(url));
     return true;
   } catch (e) {
     return false;
@@ -167,8 +228,7 @@ export const fetchAppData = async (): Promise<AppData> => {
     return { students: MOCK_STUDENTS, questions: MOCK_QUESTIONS, results: [], assignments: [] };
   }
   try {
-    const targetUrl = `${GOOGLE_SCRIPT_URL}?type=json`;
-    const response = await fetch(targetUrl);
+    const response = await fetch(getUrl(`?type=json`));
     const textData = await response.text();
     if (textData.trim().startsWith('<')) throw new Error('Invalid JSON response');
     const data = JSON.parse(textData);
@@ -180,12 +240,12 @@ export const fetchAppData = async (): Promise<AppData> => {
     const cleanQuestions = (data.questions || []).map((q: any) => ({
       ...q, 
       id: String(q.id).trim(), 
-      text: String(q.text || ''), // ✅ Force String
+      text: String(q.text || ''), 
       subject: normalizeSubject(q.subject),
       choices: q.choices.map((c: any) => ({ 
           ...c, 
           id: String(c.id),
-          text: String(c.text || '') // ✅ Force String
+          text: String(c.text || '')
       })),
       correctChoiceId: String(q.correctChoiceId),
       grade: q.grade || 'ALL',

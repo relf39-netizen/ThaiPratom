@@ -2,13 +2,15 @@
 import React, { useState, useEffect } from 'react';
 import { Teacher, Student, Subject, Assignment, Question } from '../types';
 import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, ExternalLink, Gamepad2, Calendar, Eye, CheckCircle, X, Clock, PlusCircle, ChevronLeft, ChevronRight, Book, Calculator, FlaskConical, Languages, ArrowLeft, Users, GraduationCap, Trash2, Edit, Shield } from 'lucide-react';
-import { getTeacherDashboard, addStudent, addAssignment, addQuestion, manageTeacher, getAllTeachers } from '../services/api';
+import { getTeacherDashboard, manageStudent, addAssignment, addQuestion, manageTeacher, getAllTeachers, GOOGLE_SCRIPT_URL, addStudent } from '../services/api';
 
 interface TeacherDashboardProps {
   teacher: Teacher;
   onLogout: () => void;
   onStartGame: () => void; 
 }
+
+const ADD_QUESTION_URL = GOOGLE_SCRIPT_URL;
 
 const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, onStartGame }) => {
   const [activeTab, setActiveTab] = useState<'menu' | 'students' | 'stats' | 'questions' | 'assignments' | 'teachers'>('menu');
@@ -25,12 +27,17 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [isEditingTeacher, setIsEditingTeacher] = useState(false);
   const [teacherLoading, setTeacherLoading] = useState(false);
 
-  // Student Form
+  // Student Form & Management State
   const [newStudentName, setNewStudentName] = useState('');
   const [newStudentAvatar, setNewStudentAvatar] = useState('👦');
   const [newStudentGrade, setNewStudentGrade] = useState('P6'); 
   const [createdStudent, setCreatedStudent] = useState<Student | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
+  const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
+
+  // 🔥 Processing UI State
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingMessage, setProcessingMessage] = useState('');
+  const [isSaving, setIsSaving] = useState(false); // For Add Button Loading
 
   // Assignment Form
   const [assignSubject, setAssignSubject] = useState<Subject>(Subject.MATH);
@@ -54,6 +61,9 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   // Modal State
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
 
+  // ✅ Check Admin Role (More Robust)
+  const isAdmin = (teacher.role && teacher.role.toUpperCase() === 'ADMIN') || (teacher.username && teacher.username.toLowerCase() === 'admin');
+
   useEffect(() => {
     loadData();
   }, []);
@@ -62,7 +72,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
     setLoading(true);
     const data = await getTeacherDashboard(teacher.school);
     
-    // ✅ CLIENT SIDE FILTER: กรองนักเรียนให้ตรงกับโรงเรียนของครู 100%
+    // ✅ CLIENT SIDE FILTER
     const myStudents = (data.students || []).filter((s: Student) => s.school === teacher.school);
     
     setStudents(myStudents);
@@ -72,8 +82,23 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
     setLoading(false);
   };
 
+  // --- Helper: Verify Data Change (Polling Loop) ---
+  const verifyDataChange = async (checkFn: (students: Student[]) => boolean) => {
+      // ลองเช็ค 5 ครั้ง (ประมาณ 8-10 วินาที)
+      for (let i = 0; i < 5; i++) { 
+          await new Promise(r => setTimeout(r, 1500)); 
+          const data = await getTeacherDashboard(teacher.school);
+          const myStudents = (data.students || []).filter((s: Student) => s.school === teacher.school);
+          
+          if (checkFn(myStudents)) {
+              return myStudents; // เจอข้อมูลที่เปลี่ยนแล้ว!
+          }
+      }
+      return null; // หมดเวลา
+  };
+
   const loadTeachers = async () => {
-      if (teacher.role !== 'ADMIN') return;
+      if (!isAdmin) return;
       setTeacherLoading(true);
       try {
           const data = await getAllTeachers();
@@ -92,7 +117,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
 
   const handleSaveTeacher = async () => {
       if (!tForm.username || !tForm.password || !tForm.name) return alert('กรุณากรอกข้อมูลให้ครบ');
-      setIsSaving(true);
+      setIsProcessing(true);
+      setProcessingMessage('กำลังบันทึกข้อมูลครู...');
       
       const action = isEditingTeacher ? 'edit' : 'add';
       try {
@@ -108,12 +134,13 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       } catch(e) {
           alert('เชื่อมต่อไม่สำเร็จ');
       }
-      setIsSaving(false);
+      setIsProcessing(false);
   };
 
   const handleDeleteTeacher = async (id: number) => {
       if (!confirm('ต้องการลบรายชื่อครูท่านนี้ใช่หรือไม่?')) return;
-      setIsSaving(true);
+      setIsProcessing(true);
+      setProcessingMessage('กำลังลบข้อมูลครู...');
       try {
           const res = await manageTeacher({ id, action: 'delete' });
           if (res.success) {
@@ -125,30 +152,128 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       } catch(e) {
           alert('เชื่อมต่อไม่สำเร็จ');
       }
-      setIsSaving(false);
+      setIsProcessing(false);
   };
 
-  const handleAddStudent = async () => {
-    if (!newStudentName) return;
-    setIsSaving(true);
-    const result = await addStudent(newStudentName, teacher.school, newStudentAvatar, newStudentGrade);
-    if (result) { setCreatedStudent(result); setStudents([...students, result]); setNewStudentName(''); } else { alert('เกิดข้อผิดพลาดในการบันทึก'); }
-    setIsSaving(false);
+  const handleSaveStudent = async () => {
+    if (!newStudentName) return alert("กรุณากรอกชื่อนักเรียน");
+
+    // 🟢 1. กรณีแก้ไขข้อมูล (ใช้ระบบตรวจสอบ Verification Loop เพื่อความชัวร์)
+    if (editingStudentId) {
+        setIsProcessing(true);
+        setProcessingMessage('กำลังบันทึกการแก้ไข...');
+        
+        await manageStudent({
+            action: 'edit',
+            id: editingStudentId,
+            name: newStudentName,
+            school: teacher.school,
+            avatar: newStudentAvatar,
+            grade: newStudentGrade
+        });
+
+        setProcessingMessage('กำลังยืนยันข้อมูลกับ Google Sheet...');
+        
+        // ตรวจสอบว่าข้อมูลเปลี่ยนจริงไหม
+        const updatedStudents = await verifyDataChange((list) => {
+            const target = list.find(s => s.id === editingStudentId);
+            // เช็คว่าค่าเปลี่ยนไปตามที่ตั้งไหม
+            return target && target.name === newStudentName && target.avatar === newStudentAvatar && target.grade === newStudentGrade;
+        });
+
+        setIsProcessing(false);
+
+        if (updatedStudents) {
+            setStudents(updatedStudents);
+            alert('✅ แก้ไขข้อมูลสำเร็จ');
+        } else {
+            // Fallback: อัปเดตหน้าจอทันทีแม้ Sheet จะช้า (Optimistic Update)
+            setStudents(prev => prev.map(s => s.id === editingStudentId ? { ...s, name: newStudentName, avatar: newStudentAvatar, grade: newStudentGrade } : s));
+            alert('✅ บันทึกข้อมูลแล้ว (กำลังซิงค์ข้อมูลเบื้องหลัง)');
+        }
+        
+        handleCancelEdit();
+        return;
+    }
+
+    // 🟢 2. กรณีเพิ่มข้อมูลใหม่ (ใช้ระบบดั้งเดิม = รวดเร็ว + โชว์บัตร)
+    setIsSaving(true); 
+    try {
+        const result = await addStudent(newStudentName, teacher.school, newStudentAvatar, newStudentGrade);
+        
+        if (result) {
+            setCreatedStudent(result); // ✅ โชว์บัตรนักเรียนทันที
+            setStudents(prev => [...prev, result]); 
+            setNewStudentName('');
+            // ไม่ต้อง Alert เพราะมีบัตรโชว์ให้เห็นแล้ว
+        } else {
+            alert('เกิดข้อผิดพลาดในการบันทึก');
+        }
+    } catch(e) {
+        alert('เชื่อมต่อไม่สำเร็จ: ' + e);
+    } finally {
+        setIsSaving(false);
+    }
   };
+
+  const handleEditStudent = (s: Student) => {
+      setEditingStudentId(s.id);
+      setNewStudentName(s.name);
+      setNewStudentAvatar(s.avatar);
+      setNewStudentGrade(s.grade || 'P6');
+      const formElement = document.getElementById('student-form');
+      if(formElement) formElement.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const handleDeleteStudent = async (id: string) => {
+      if (!confirm('ยืนยันการลบนักเรียนคนนี้ใช่หรือไม่?')) return;
+      
+      setIsProcessing(true);
+      setProcessingMessage('กำลังลบข้อมูลออกจากฐานข้อมูล...');
+
+      await manageStudent({ action: 'delete', id });
+
+      setProcessingMessage('กำลังยืนยันการลบกับ Google Sheet...');
+      const updatedStudents = await verifyDataChange((list) => {
+          return !list.some(s => s.id === id);
+      });
+
+      setIsProcessing(false);
+
+      if (updatedStudents) {
+          setStudents(updatedStudents);
+          alert('✅ ลบข้อมูลสำเร็จ');
+      } else {
+          // ✅ Timeout: บังคับลบออกจากหน้าจอเลย
+          setStudents(prev => prev.filter(s => s.id !== id));
+          alert('✅ ลบข้อมูลเรียบร้อย (กำลังซิงค์ข้อมูลเบื้องหลัง)');
+      }
+  };
+
+  const handleCancelEdit = () => {
+      setEditingStudentId(null);
+      setNewStudentName('');
+      setNewStudentAvatar('👦');
+  };
+
   const handleCreateAssignment = async () => {
     if (!assignDeadline) return alert('กรุณาเลือกวันกำหนดส่ง');
-    setIsSaving(true);
+    setIsProcessing(true);
+    setProcessingMessage('กำลังบันทึกการบ้าน...');
     const success = await addAssignment(teacher.school, assignSubject, assignCount, assignDeadline, teacher.name);
-    if (success) { alert('✅ สั่งการบ้านเรียบร้อยแล้ว'); setAssignDeadline(''); const data = await getTeacherDashboard(teacher.school); setAssignments(data.assignments || []); } else { alert('เกิดข้อผิดพลาด'); }
-    setIsSaving(false);
+    if (success) { alert('✅ สั่งการบ้านเรียบร้อยแล้ว'); setAssignDeadline(''); await loadData(); } else { alert('เกิดข้อผิดพลาด'); }
+    setIsProcessing(false);
   };
+  
   const handleAddQuestion = async () => {
     if (!qText || !qChoices.c1 || !qChoices.c2) return alert('กรุณากรอกข้อมูลให้ครบถ้วน');
-    setIsSaving(true);
+    setIsProcessing(true);
+    setProcessingMessage('กำลังบันทึกข้อสอบ...');
     const success = await addQuestion({ subject: qSubject, grade: qGrade, text: qText, image: qImage, c1: qChoices.c1, c2: qChoices.c2, c3: qChoices.c3, c4: qChoices.c4, correct: qCorrect, explanation: qExplain, school: teacher.school });
-    if (success) { alert('✅ บันทึกข้อสอบเรียบร้อยแล้ว'); setQText(''); setQChoices({c1:'', c2:'', c3:'', c4:''}); setQExplain(''); const data = await getTeacherDashboard(teacher.school); setQuestions(data.questions || []); } else { alert('บันทึกไม่สำเร็จ'); }
-    setIsSaving(false);
+    if (success) { alert('✅ บันทึกข้อสอบเรียบร้อยแล้ว'); setQText(''); setQChoices({c1:'', c2:'', c3:'', c4:''}); setQExplain(''); await loadData(); } else { alert('บันทึกไม่สำเร็จ'); }
+    setIsProcessing(false);
   };
+  
   const getStudentScore = (studentId: string) => { const studentResults = stats.filter(r => String(r.studentId) === String(studentId)); if (studentResults.length === 0) return null; return studentResults[studentResults.length - 1]; };
   const countSubmitted = (assignmentId: string) => { const submittedStudentIds = new Set(stats.filter(r => r.assignmentId === assignmentId).map(r => r.studentId)); return submittedStudentIds.size; };
   const GRADES = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'];
@@ -158,11 +283,33 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const currentQuestions = filteredQuestions.slice((qBankPage - 1) * ITEMS_PER_PAGE, qBankPage * ITEMS_PER_PAGE);
 
   return (
-    <div className="max-w-6xl mx-auto pb-20">
+    <div className="max-w-6xl mx-auto pb-20 relative">
+      
+      {/* 🔥 Loading Processing Overlay (ใช้เฉพาะตอนแก้ไข/ลบ/หรือโหลดหนักๆ) */}
+      {isProcessing && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center">
+            <div className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm w-full mx-4 animate-fade-in border-4 border-purple-100">
+                <div className="relative mb-6">
+                    <div className="w-20 h-20 border-4 border-purple-100 border-t-purple-600 rounded-full animate-spin"></div>
+                    <div className="absolute inset-0 flex items-center justify-center text-purple-600">
+                        <RefreshCw size={28} className="animate-pulse"/>
+                    </div>
+                </div>
+                <h3 className="text-xl font-bold text-gray-800 mb-2 text-center">{processingMessage}</h3>
+                <p className="text-gray-500 text-center text-sm">ระบบกำลังทำงานร่วมกับ Google Sheet<br/>กรุณารอสักครู่...</p>
+                <div className="mt-6 w-full bg-gray-100 h-2 rounded-full overflow-hidden">
+                    <div className="h-full bg-purple-500 w-1/3 animate-[shimmer_1s_infinite] relative overflow-hidden">
+                        <div className="absolute inset-0 bg-white/30 animate-[ping_2s_infinite]"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
+
       <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-6 rounded-b-3xl md:rounded-3xl shadow-lg mb-8 flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold flex items-center gap-2"><GraduationCap size={28} /> ห้องพักครู</h2>
-          <p className="opacity-90 text-sm mt-1">{teacher.school} • คุณครู{teacher.name} {teacher.role === 'ADMIN' && '⭐(Admin)'}</p>
+          <p className="opacity-90 text-sm mt-1">{teacher.school} • คุณครู{teacher.name} {isAdmin && '⭐(Admin)'}</p>
         </div>
         <button onClick={onLogout} className="bg-white/20 hover:bg-white/30 p-2 rounded-xl transition backdrop-blur-sm"><LogOut size={20} /></button>
       </div>
@@ -174,7 +321,9 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             <MenuCard icon={<BarChart2 size={40} />} title="ดูผลคะแนน" desc="สถิติการสอบ" color="bg-green-50 text-green-600 border-green-200" onClick={() => setActiveTab('stats')} />
             <MenuCard icon={<FileText size={40} />} title="คลังข้อสอบ" desc="เพิ่มและจัดการข้อสอบ" color="bg-blue-50 text-blue-600 border-blue-200" onClick={() => setActiveTab('questions')} />
             <MenuCard icon={<Gamepad2 size={40} />} title="จัดกิจกรรมเกม" desc="เปิดห้องแข่งขัน Real-time" color="bg-pink-50 text-pink-600 border-pink-200" onClick={onStartGame} />
-            {teacher.role === 'ADMIN' && (
+            
+            {/* ✅ Admin Menu */}
+            {isAdmin && (
                 <MenuCard icon={<Shield size={40} />} title="จัดการระบบครู" desc="เพิ่ม/ลบ รายชื่อครู" color="bg-slate-50 text-slate-600 border-slate-200" onClick={() => { setActiveTab('teachers'); loadTeachers(); }} />
             )}
         </div>
@@ -184,7 +333,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         <div className="bg-white rounded-3xl shadow-sm p-4 md:p-6 min-h-[400px] relative animate-fade-in">
             <button onClick={() => setActiveTab('menu')} className="mb-6 flex items-center gap-2 text-gray-500 hover:text-purple-600 font-bold transition-colors"><div className="bg-gray-100 p-2 rounded-full"><ArrowLeft size={20} /></div> กลับเมนูหลัก</button>
             
-            {activeTab === 'teachers' && teacher.role === 'ADMIN' && (
+            {activeTab === 'teachers' && isAdmin && (
                 <div>
                     <div className="flex justify-between items-center mb-6">
                         <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2"><Shield className="text-slate-600"/> จัดการข้อมูลครู</h3>
@@ -215,7 +364,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
 
                                 <div className="flex gap-2 pt-2">
                                     {isEditingTeacher && <button onClick={()=>{setIsEditingTeacher(false); setTForm({ id: '', username: '', password: '', name: '', school: '', role: 'TEACHER', gradeLevel: 'ALL' });}} className="bg-gray-200 px-4 py-2 rounded-lg text-sm">ยกเลิก</button>}
-                                    <button onClick={handleSaveTeacher} disabled={isSaving} className="flex-1 bg-slate-700 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-slate-800">{isSaving ? 'กำลังบันทึก...' : (isEditingTeacher ? 'บันทึกแก้ไข' : 'เพิ่มข้อมูล')}</button>
+                                    <button onClick={handleSaveTeacher} disabled={isProcessing} className="flex-1 bg-slate-700 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-slate-800">{isProcessing ? 'รอสักครู่...' : (isEditingTeacher ? 'บันทึกแก้ไข' : 'เพิ่มข้อมูล')}</button>
                                 </div>
                             </div>
                         </div>
@@ -254,13 +403,14 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 </div>
             )}
 
-            {/* ... (Tabs อื่นๆ คงเดิม) */}
+            {/* ... (Tabs อื่นๆ) */}
             {activeTab === 'students' && (
                 <div className="grid md:grid-cols-2 gap-8">
-                  {/* ... (ส่วนนักเรียนเหมือนเดิม) ... */}
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-800 mb-4">ลงทะเบียนนักเรียนใหม่</h3>
-                    <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200">
+                  <div id="student-form">
+                    <h3 className="text-lg font-bold text-gray-800 mb-4">
+                        {editingStudentId ? <span className="text-orange-600 flex items-center gap-2">✏️ กำลังแก้ไขข้อมูลนักเรียน</span> : 'ลงทะเบียนนักเรียนใหม่'}
+                    </h3>
+                    <div className={`p-6 rounded-2xl border border-gray-200 transition-colors ${editingStudentId ? 'bg-orange-50 border-orange-200' : 'bg-gray-50'}`}>
                       <div className="mb-4">
                           <label className="block text-sm font-medium text-gray-600 mb-2">ระดับชั้น</label>
                           <select value={newStudentGrade} onChange={(e)=>setNewStudentGrade(e.target.value)} className="w-full p-3 border rounded-xl bg-white text-gray-900">
@@ -272,19 +422,37 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                       <div className="bg-purple-50 p-3 rounded-xl mb-4 border border-purple-100"><span className="text-xs text-purple-600 font-bold uppercase">สังกัดโรงเรียน</span><p className="text-gray-800 font-medium truncate">{teacher.school}</p></div>
                       <label className="block text-sm font-medium text-gray-600 mb-2">รูปแทนตัว</label>
                       <div className="flex gap-2 mb-6 overflow-x-auto py-1">{['👦','👧','🧒','🧑','👓','🦄','🦁','🐼'].map(emoji => (<button key={emoji} onClick={() => setNewStudentAvatar(emoji)} className={`text-2xl p-2 rounded-lg border-2 transition ${newStudentAvatar === emoji ? 'border-purple-500 bg-purple-50' : 'border-transparent hover:bg-gray-200'}`}>{emoji}</button>))}</div>
-                      <button onClick={handleAddStudent} disabled={isSaving || !newStudentName} className="w-full bg-purple-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-purple-700 transition disabled:opacity-50 flex items-center justify-center gap-2">{isSaving ? 'กำลังบันทึก...' : <><Save size={18} /> บันทึกข้อมูล</>}</button>
+                      
+                      <div className="flex gap-2">
+                          {editingStudentId && (
+                              <button onClick={handleCancelEdit} className="bg-gray-200 text-gray-600 px-4 py-3 rounded-xl font-bold">ยกเลิก</button>
+                          )}
+                          <button onClick={handleSaveStudent} disabled={isProcessing || isSaving || !newStudentName} className={`flex-1 text-white py-3 rounded-xl font-bold shadow-lg transition disabled:opacity-50 flex items-center justify-center gap-2 ${editingStudentId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-purple-600 hover:bg-purple-700'}`}>
+                              {isProcessing || isSaving ? 'กำลังดำเนินการ...' : (editingStudentId ? <><Save size={18} /> บันทึกแก้ไข</> : <><Save size={18} /> บันทึกข้อมูล</>)}
+                          </button>
+                      </div>
                     </div>
+                    
                     <div className="mt-6">
                       <div className="flex justify-between items-center mb-2"><h4 className="text-sm font-bold text-gray-500">รายชื่อนักเรียน ({students.length})</h4><button onClick={loadData} className="text-purple-600 hover:bg-purple-50 p-1 rounded"><RefreshCw size={14}/></button></div>
                       <div className="max-h-60 overflow-y-auto border border-gray-100 rounded-xl bg-white">
                           {students.map(s => (
-                              <div key={s.id} className="flex items-center p-3 border-b last:border-0 hover:bg-gray-50 gap-3">
+                              <div key={s.id} className={`flex items-center p-3 border-b last:border-0 hover:bg-gray-50 gap-3 ${editingStudentId === s.id ? 'bg-orange-50' : ''}`}>
                                   <div className="flex-shrink-0 w-10 h-10 bg-purple-50 rounded-full flex items-center justify-center text-xl border border-purple-100">{s.avatar}</div>
                                   <div className="flex-1 min-w-0">
                                       <p className="text-sm font-bold text-gray-800 truncate">{s.name || 'ไม่ระบุชื่อ'}</p>
                                       <span className="text-[10px] text-white bg-purple-400 px-2 py-0.5 rounded-full">{s.grade}</span>
                                   </div>
-                                  <div className="flex-shrink-0"><span className="font-mono text-xs font-medium text-purple-600 bg-white px-2 py-1 rounded border border-purple-200 shadow-sm">{s.id}</span></div>
+                                  <div className="flex-shrink-0 flex items-center gap-2">
+                                      <span className="font-mono text-xs font-medium text-purple-600 bg-white px-2 py-1 rounded border border-purple-200 shadow-sm mr-2">{s.id}</span>
+                                      
+                                      <button onClick={() => handleEditStudent(s)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition" title="แก้ไข">
+                                          <Edit size={16}/>
+                                      </button>
+                                      <button onClick={() => handleDeleteStudent(s.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded transition" title="ลบ">
+                                          <Trash2 size={16}/>
+                                      </button>
+                                  </div>
                               </div>
                           ))}
                       </div>
@@ -331,8 +499,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                             <input type="date" value={assignDeadline} onChange={(e) => setAssignDeadline(e.target.value)} className="w-full p-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-orange-200 outline-none" />
                         </div>
                         <div className="flex items-end">
-                            <button onClick={handleCreateAssignment} disabled={isSaving} className="w-full bg-orange-500 text-white py-2 rounded-lg font-bold shadow hover:bg-orange-600 disabled:opacity-50 flex items-center justify-center gap-2 h-[42px]">
-                                {isSaving ? 'กำลังบันทึก...' : <><Save size={16}/> สั่งงาน</>}
+                            <button onClick={handleCreateAssignment} disabled={isProcessing} className="w-full bg-orange-500 text-white py-2 rounded-lg font-bold shadow hover:bg-orange-600 disabled:opacity-50 flex items-center justify-center gap-2 h-[42px]">
+                                {isProcessing ? 'กำลังบันทึก...' : <><Save size={16}/> สั่งงาน</>}
                             </button>
                         </div>
                     </div>
@@ -420,7 +588,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                         </span>
                       </h3>
                       <div className="flex gap-2">
-                         <a href="https://script.google.com/macros/s/AKfycbxmfNPB5_T5-BrAJtrlI4PPEPO8z4Y1vZ4xJyJmCzXj1aE9LLY4RDPhcAhYKY-pvqY_/exec" target="_blank" rel="noopener noreferrer" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 shadow-sm transition">
+                         <a href={ADD_QUESTION_URL} target="_blank" rel="noopener noreferrer" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 shadow-sm transition">
                              <PlusCircle size={16} /> จัดการข้อสอบ (Admin)
                          </a>
                       </div>
@@ -466,8 +634,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                          <label className="block text-xs font-bold text-gray-500 mb-1">อธิบายเฉลย</label>
                          <textarea value={qExplain} onChange={(e)=>setQExplain(e.target.value)} className="w-full p-2 border rounded-lg bg-white text-gray-900" rows={1} placeholder="อธิบายเหตุผล..."></textarea>
                       </div>
-                      <button onClick={handleAddQuestion} disabled={isSaving} className="w-full bg-blue-600 text-white py-2 rounded-xl font-bold shadow hover:bg-blue-700 flex items-center justify-center gap-2">
-                         {isSaving ? 'กำลังบันทึก...' : <><PlusCircle size={20}/> บันทึกข้อสอบ</>}
+                      <button onClick={handleAddQuestion} disabled={isProcessing} className="w-full bg-blue-600 text-white py-2 rounded-xl font-bold shadow hover:bg-blue-700 flex items-center justify-center gap-2">
+                         {isProcessing ? 'กำลังบันทึก...' : <><PlusCircle size={20}/> บันทึกข้อสอบ</>}
                       </button>
                   </div>
     

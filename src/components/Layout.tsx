@@ -21,15 +21,23 @@ const Layout: React.FC<LayoutProps> = ({
   currentPage,
   onNavigate
 }) => {
+  // 🟢 ไอคอนนักเรียนดูแท็บเล็ต/เรียนรู้ร่วมกัน
+  const LOGO_URL = "https://img5.pic.in.th/file/secure-sv1/photo_2025-11-26_00-32-45.jpg"; 
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-100 to-blue-50 pb-20 md:pb-0">
       {/* Header */}
       <header className="bg-white shadow-md sticky top-0 z-50">
         <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => onNavigate('dashboard')}>
-            <div className="bg-blue-600 text-white p-2 rounded-lg">
-              <BookOpen size={24} />
-            </div>
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => onNavigate('dashboard')}>
+            
+            {/* ส่วนโลโก้รูปภาพ */}
+            <img 
+              src={LOGO_URL} 
+              alt="School Logo" 
+              className="w-12 h-12 object-cover rounded-full hover:scale-110 transition-transform shadow-sm border border-blue-100"
+            />
+            
             <h1 className="text-xl font-bold text-blue-800 hidden md:block">Smart O-NET Prep</h1>
             <h1 className="text-xl font-bold text-blue-800 md:hidden">Smart O-NET</h1>
           </div>
