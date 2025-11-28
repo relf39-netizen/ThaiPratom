@@ -169,8 +169,12 @@ const App: React.FC = () => {
           case 'select-subject': return <SubjectSelection onSelectSubject={handleSelectSubject} onBack={() => setCurrentPage('dashboard')} />;
           case 'practice':
             let qList = questions;
-            if (currentUser && currentUser.grade) {
-                qList = questions.filter(q => q.grade === currentUser.grade || q.grade === 'ALL');
+            if (currentUser) {
+                // ✅ FILTER: เฉพาะข้อสอบของโรงเรียนตัวเอง หรือ ส่วนกลาง (CENTER/Admin)
+                qList = questions.filter(q => 
+                    (q.grade === currentUser.grade || q.grade === 'ALL') &&
+                    (q.school === currentUser.school || q.school === 'CENTER' || q.school === 'Admin')
+                );
             }
             const activeSubject = currentAssignment ? currentAssignment.subject : selectedSubject;
             if (activeSubject) qList = qList.filter(q => q.subject === activeSubject);

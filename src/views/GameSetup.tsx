@@ -43,8 +43,11 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
   const handleCreateGame = async () => {
     setLoading(true);
 
-    // 1. กรองระดับชั้น
-    let filtered = allQuestions.filter(q => q.grade === selectedGrade || q.grade === 'ALL');
+    // ✅ กรองข้อสอบเฉพาะของโรงเรียนตัวเอง + ส่วนกลาง
+    let filtered = allQuestions.filter(q => 
+        (q.grade === selectedGrade || q.grade === 'ALL') &&
+        (q.school === teacher.school || q.school === 'CENTER' || q.school === 'Admin')
+    );
 
     // 2. กรองวิชา
     if (selectedSubject !== 'MIXED') {
@@ -58,7 +61,7 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
     const finalQuestions = filtered.slice(0, questionCount);
 
     if (finalQuestions.length === 0) {
-        alert(`ไม่พบข้อสอบสำหรับชั้น ${GRADE_LABELS[selectedGrade]} ในหมวดนี้`);
+        alert(`ไม่พบข้อสอบสำหรับชั้น ${GRADE_LABELS[selectedGrade]} ในหมวดนี้ (โรงเรียน ${teacher.school} + ส่วนกลาง)`);
         setLoading(false);
         return;
     }

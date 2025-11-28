@@ -6,10 +6,11 @@ export interface Student {
   avatar: string; 
   stars: number; 
   grade?: string; 
+  teacherId?: string; // ✅ ระบุ ID ครูผู้ดูแล
 }
 
 export interface Teacher {
-  id?: number;
+  id?: string | number; // ✅ รองรับทั้ง String และ Number สำหรับ ID
   username?: string;
   password?: string;
   name: string;
@@ -39,6 +40,7 @@ export interface Question {
   explanation: string;
   grade?: string; 
   school?: string; 
+  teacherId?: string; // ✅ เพิ่ม ID ครูเจ้าของข้อสอบ
 }
 
 export interface ExamResult {

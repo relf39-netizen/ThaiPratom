@@ -71,7 +71,20 @@ export const getAllTeachers = async (): Promise<Teacher[]> => {
 export const manageTeacher = async (data: any) => {
     if (!GOOGLE_SCRIPT_URL) return { success: false, message: 'No URL' };
     try {
-        const params = new URLSearchParams({ type: 'manage_teacher', ...data });
+        const params = new URLSearchParams();
+        params.append('type', 'manage_teacher');
+        
+        // Explicitly append fields to ensure they are sent correctly
+        if (data.action) params.append('action', data.action);
+        if (data.id) params.append('id', String(data.id)); // ✅ Send ID
+        if (data.username) params.append('username', data.username);
+        if (data.password) params.append('password', data.password);
+        if (data.name) params.append('name', data.name);
+        if (data.school) params.append('school', data.school);
+        if (data.role) params.append('role', data.role);
+        if (data.gradeLevel) params.append('gradeLevel', data.gradeLevel);
+        
+        console.log("Manage Teacher Params:", params.toString());
         const response = await fetch(getUrl(`?${params.toString()}`));
         return await response.json();
     } catch (e) {
@@ -80,24 +93,23 @@ export const manageTeacher = async (data: any) => {
 };
 
 // ✅ Manage Student (Add/Edit/Delete)
-export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', id?: string, name?: string, school?: string, avatar?: string, grade?: string }): Promise<{success: boolean, student?: Student, message?: string, rawError?: boolean}> => {
+export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', id?: string, name?: string, school?: string, avatar?: string, grade?: string, teacherId?: string }): Promise<{success: boolean, student?: Student, message?: string, rawError?: boolean}> => {
   if (!GOOGLE_SCRIPT_URL) return { success: false, message: 'No URL' };
   
   try {
     const params = new URLSearchParams();
     
-    // Add Legacy Support for 'add' action to match old Script if needed
-    if (data.action === 'add') {
-        params.append('type', 'add_student');
-    } else {
-        params.append('type', 'manage_student');
-    }
+    // Legacy support for 'add_student' type if needed, but prefer manage_student
+    params.append('type', data.action === 'add' ? 'add_student' : 'manage_student');
     
-    Object.keys(data).forEach(key => {
-        if (data[key as keyof typeof data] !== undefined && data[key as keyof typeof data] !== null) {
-            params.append(key, String(data[key as keyof typeof data]));
-        }
-    });
+    // Explicitly add parameters to ensure nothing is missed
+    if (data.action) params.append('action', data.action);
+    if (data.id) params.append('id', String(data.id));
+    if (data.name) params.append('name', String(data.name));
+    if (data.school) params.append('school', String(data.school));
+    if (data.avatar) params.append('avatar', String(data.avatar));
+    if (data.grade) params.append('grade', String(data.grade));
+    if (data.teacherId) params.append('teacherId', String(data.teacherId)); // ✅ Ensure this is sent
     
     console.log("Calling API manageStudent:", params.toString());
     const response = await fetch(getUrl(`?${params.toString()}`));
@@ -106,11 +118,11 @@ export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', i
     try {
         const result = JSON.parse(text);
         
-        // Legacy format fix: 'add' usually returns { success:true, id:..., name:... } but UI needs { student: ... }
+        // Legacy format fix
         if (data.action === 'add' && result.success && !result.student && result.id) {
              return { 
                  success: true, 
-                 student: { id: result.id, name: result.name, school: result.school, avatar: result.avatar, stars: 0, grade: result.grade } 
+                 student: { id: result.id, name: result.name, school: result.school, avatar: result.avatar, stars: 0, grade: result.grade, teacherId: result.teacherId } 
              };
         }
         
@@ -132,12 +144,11 @@ export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', i
 };
 
 // ✅ Add New Student (Legacy Wrapper)
-export const addStudent = async (name: string, school: string, avatar: string, grade: string = 'P6'): Promise<Student | null> => {
-  const result = await manageStudent({ action: 'add', name, school, avatar, grade });
+export const addStudent = async (name: string, school: string, avatar: string, grade: string = 'P6', teacherId?: string): Promise<Student | null> => {
+  const result = await manageStudent({ action: 'add', name, school, avatar, grade, teacherId });
   if (result.success && result.student) {
       return result.student;
   }
-  // Fallback for legacy script return
   if (result.success && (result as any).id) {
       return result as any;
   }
@@ -164,10 +175,18 @@ export const getTeacherDashboard = async (school: string) => {
       })),
       correctChoiceId: String(q.correctChoiceId),
       grade: q.grade || 'ALL',
-      school: q.school || 'CENTER'
+      school: q.school || 'CENTER',
+      teacherId: q.teacherId ? String(q.teacherId) : undefined // ✅ Map Teacher ID for questions
+    }));
+    
+    // ✅ Ensure students have teacherId
+    const cleanStudents = (data.students || []).map((s: any) => ({
+      ...s,
+      id: String(s.id).trim(),
+      teacherId: s.teacherId ? String(s.teacherId) : undefined
     }));
 
-    return { ...data, questions: cleanQuestions };
+    return { ...data, students: cleanStudents, questions: cleanQuestions };
   } catch (e) {
     console.error("Dashboard error", e);
     return { students: [], results: [], assignments: [], questions: [] };
@@ -188,9 +207,21 @@ export const addQuestion = async (question: any): Promise<boolean> => {
       correct: question.correct,
       explanation: question.explanation,
       grade: question.grade,
-      school: question.school || ''
+      school: question.school || '',
+      teacherId: question.teacherId || '' // ✅ Send Teacher ID
     });
     await fetch(getUrl(`?${params.toString()}`));
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
+
+// ✅ Delete Question
+export const deleteQuestion = async (id: string): Promise<boolean> => {
+  if (!GOOGLE_SCRIPT_URL) return false;
+  try {
+    await fetch(getUrl(`?type=delete_question&id=${id}`));
     return true;
   } catch (e) {
     return false;
@@ -234,7 +265,8 @@ export const fetchAppData = async (): Promise<AppData> => {
     const data = JSON.parse(textData);
     
     const cleanStudents = (data.students || []).map((s: any) => ({
-      ...s, id: String(s.id).trim(), stars: Number(s.stars) || 0, grade: s.grade || 'P6'
+      ...s, id: String(s.id).trim(), stars: Number(s.stars) || 0, grade: s.grade || 'P6',
+      teacherId: s.teacherId ? String(s.teacherId) : undefined // ✅ Map Teacher ID
     }));
     
     const cleanQuestions = (data.questions || []).map((q: any) => ({
@@ -245,11 +277,12 @@ export const fetchAppData = async (): Promise<AppData> => {
       choices: q.choices.map((c: any) => ({ 
           ...c, 
           id: String(c.id),
-          text: String(c.text || '')
+          text: String(c.text || '') 
       })),
       correctChoiceId: String(q.correctChoiceId),
       grade: q.grade || 'ALL',
-      school: q.school
+      school: q.school || 'CENTER',
+      teacherId: q.teacherId ? String(q.teacherId) : undefined // ✅ Map Teacher ID
     }));
 
     const cleanResults = (data.results || []).map((r: any) => ({
