@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Teacher, Student, Subject, Assignment, Question } from '../types';
-import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, ExternalLink, Gamepad2, Calendar, Eye, CheckCircle, X, Clock, PlusCircle, ChevronLeft, ChevronRight, Book, Calculator, FlaskConical, Languages, ArrowLeft, Users, GraduationCap, Trash2, Edit, Shield } from 'lucide-react';
+import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, ExternalLink, Gamepad2, Calendar, Eye, CheckCircle, X, Clock, PlusCircle, ChevronLeft, ChevronRight, Book, Calculator, FlaskConical, Languages, ArrowLeft, Users, GraduationCap, Trash2, Edit, Shield, UserCog, KeyRound } from 'lucide-react';
 import { getTeacherDashboard, manageStudent, addAssignment, addQuestion, manageTeacher, getAllTeachers, GOOGLE_SCRIPT_URL, addStudent } from '../services/api';
 
 interface TeacherDashboardProps {
@@ -13,7 +13,7 @@ interface TeacherDashboardProps {
 const ADD_QUESTION_URL = GOOGLE_SCRIPT_URL;
 
 const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, onStartGame }) => {
-  const [activeTab, setActiveTab] = useState<'menu' | 'students' | 'stats' | 'questions' | 'assignments' | 'teachers'>('menu');
+  const [activeTab, setActiveTab] = useState<'menu' | 'students' | 'stats' | 'questions' | 'assignments' | 'teachers' | 'profile'>('menu');
   
   const [students, setStudents] = useState<Student[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -26,6 +26,9 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [tForm, setTForm] = useState({ id: '', username: '', password: '', name: '', school: '', role: 'TEACHER', gradeLevel: 'ALL' });
   const [isEditingTeacher, setIsEditingTeacher] = useState(false);
   const [teacherLoading, setTeacherLoading] = useState(false);
+
+  // Profile Management State
+  const [profileForm, setProfileForm] = useState({ name: teacher.name, password: teacher.password || '', confirmPassword: '' });
 
   // Student Form & Management State
   const [newStudentName, setNewStudentName] = useState('');
@@ -67,6 +70,11 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   useEffect(() => {
     loadData();
   }, []);
+
+  // Update profile form when teacher prop changes
+  useEffect(() => {
+      setProfileForm({ name: teacher.name, password: teacher.password || '', confirmPassword: teacher.password || '' });
+  }, [teacher]);
 
   const loadData = async () => {
     setLoading(true);
@@ -113,6 +121,40 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       } finally {
           setTeacherLoading(false);
       }
+  };
+
+  const handleUpdateProfile = async () => {
+      if (!profileForm.name || !profileForm.password) return alert('กรุณากรอกข้อมูลให้ครบ');
+      if (profileForm.password !== profileForm.confirmPassword) return alert('รหัสผ่านยืนยันไม่ตรงกัน');
+
+      setIsProcessing(true);
+      setProcessingMessage('กำลังอัปเดตข้อมูลส่วนตัว...');
+
+      try {
+          // ส่งข้อมูลทั้งหมดของครูคนเดิมกลับไป แต่เปลี่ยนแค่ name/password
+          // ต้องระวังไม่ให้ School/Role/GradeLevel หาย
+          const payload = {
+              action: 'edit',
+              id: teacher.id, 
+              username: teacher.username,
+              password: profileForm.password,
+              name: profileForm.name,
+              school: teacher.school,
+              role: teacher.role || 'TEACHER',
+              gradeLevel: teacher.gradeLevel || 'ALL'
+          };
+
+          const res = await manageTeacher(payload);
+          if (res.success) {
+              alert('✅ อัปเดตข้อมูลสำเร็จ กรุณาเข้าสู่ระบบใหม่เพื่อให้ข้อมูลเป็นปัจจุบัน');
+              onLogout(); // บังคับ Logout เพื่อความปลอดภัยและ Refresh Data
+          } else {
+              alert('เกิดข้อผิดพลาด: ' + res.message);
+          }
+      } catch(e) {
+          alert('เชื่อมต่อไม่สำเร็จ');
+      }
+      setIsProcessing(false);
   };
 
   const handleSaveTeacher = async () => {
@@ -322,7 +364,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   return (
     <div className="max-w-6xl mx-auto pb-20 relative">
       
-      {/* 🔥 Loading Processing Overlay (ใช้เฉพาะตอนแก้ไข/ลบ/หรือโหลดหนักๆ) */}
+      {/* 🔥 Loading Processing Overlay */}
       {isProcessing && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center">
             <div className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm w-full mx-4 animate-fade-in border-4 border-purple-100">
@@ -359,6 +401,9 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             <MenuCard icon={<FileText size={40} />} title="คลังข้อสอบ" desc="เพิ่มและจัดการข้อสอบ" color="bg-blue-50 text-blue-600 border-blue-200" onClick={() => setActiveTab('questions')} />
             <MenuCard icon={<Gamepad2 size={40} />} title="จัดกิจกรรมเกม" desc="เปิดห้องแข่งขัน Real-time" color="bg-pink-50 text-pink-600 border-pink-200" onClick={onStartGame} />
             
+            {/* ✅ เมนูข้อมูลส่วนตัว (สำหรับทุกคน) */}
+            <MenuCard icon={<UserCog size={40} />} title="ข้อมูลส่วนตัว" desc="เปลี่ยนรหัสผ่าน / แก้ไขชื่อ" color="bg-teal-50 text-teal-600 border-teal-200" onClick={() => setActiveTab('profile')} />
+
             {/* ✅ Admin Menu */}
             {isAdmin && (
                 <MenuCard icon={<Shield size={40} />} title="จัดการระบบครู" desc="เพิ่ม/ลบ รายชื่อครู" color="bg-slate-50 text-slate-600 border-slate-200" onClick={() => { setActiveTab('teachers'); loadTeachers(); }} />
@@ -370,6 +415,44 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         <div className="bg-white rounded-3xl shadow-sm p-4 md:p-6 min-h-[400px] relative animate-fade-in">
             <button onClick={() => setActiveTab('menu')} className="mb-6 flex items-center gap-2 text-gray-500 hover:text-purple-600 font-bold transition-colors"><div className="bg-gray-100 p-2 rounded-full"><ArrowLeft size={20} /></div> กลับเมนูหลัก</button>
             
+            {/* 🟢 หน้า Profile */}
+            {activeTab === 'profile' && (
+                <div className="max-w-xl mx-auto">
+                    <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2 mb-6 border-b pb-4">
+                        <UserCog className="text-teal-600"/> จัดการข้อมูลส่วนตัว
+                    </h3>
+                    <div className="bg-teal-50 p-6 rounded-2xl border border-teal-100 shadow-sm">
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold text-gray-600 mb-1">Username (เปลี่ยนไม่ได้)</label>
+                                <input type="text" value={teacher.username} disabled className="w-full p-3 border rounded-xl bg-gray-100 text-gray-500 cursor-not-allowed"/>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-gray-600 mb-1">ชื่อ-นามสกุล</label>
+                                <input type="text" value={profileForm.name} onChange={e=>setProfileForm({...profileForm, name: e.target.value})} className="w-full p-3 border rounded-xl bg-white focus:ring-2 focus:ring-teal-200 outline-none"/>
+                            </div>
+                            <div className="pt-4 border-t border-teal-100 mt-2">
+                                <h4 className="text-sm font-bold text-teal-700 mb-3 flex items-center gap-2"><KeyRound size={16}/> เปลี่ยนรหัสผ่าน</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">รหัสผ่านใหม่</label>
+                                        <input type="password" value={profileForm.password} onChange={e=>setProfileForm({...profileForm, password: e.target.value})} className="w-full p-3 border rounded-xl bg-white focus:ring-2 focus:ring-teal-200 outline-none"/>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">ยืนยันรหัสผ่าน</label>
+                                        <input type="password" value={profileForm.confirmPassword} onChange={e=>setProfileForm({...profileForm, confirmPassword: e.target.value})} className="w-full p-3 border rounded-xl bg-white focus:ring-2 focus:ring-teal-200 outline-none"/>
+                                    </div>
+                                </div>
+                            </div>
+                            <button onClick={handleUpdateProfile} disabled={isProcessing} className="w-full bg-teal-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-teal-700 transition mt-4">
+                                {isProcessing ? 'กำลังบันทึก...' : 'บันทึกการเปลี่ยนแปลง'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 🔴 หน้า Admin (จัดการครู) */}
             {activeTab === 'teachers' && isAdmin && (
                 <div>
                     <div className="flex justify-between items-center mb-6">
