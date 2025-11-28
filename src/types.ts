@@ -57,6 +57,7 @@ export interface Assignment {
   id: string;
   school: string;
   subject: Subject;
+  grade?: string; // ✅ เพิ่มระดับชั้น
   questionCount: number;
   deadline: string; 
   createdBy: string;

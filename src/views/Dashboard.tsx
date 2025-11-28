@@ -15,8 +15,17 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
   // state สำหรับสลับหน้าระหว่าง 'main' (หน้าหลัก) กับ 'history' (ประวัติ)
   const [view, setView] = useState<'main' | 'history'>('main');
 
-  // กรองข้อมูล
-  const myAssignments = assignments.filter(a => a.school === student.school);
+  // กรองข้อมูล (โรงเรียนตรงกัน + ระดับชั้นตรงกัน)
+  const myAssignments = assignments.filter(a => {
+      // 1. เช็คโรงเรียน
+      if (a.school !== student.school) return false;
+
+      // 2. เช็คระดับชั้น (ถ้าการบ้านระบุชั้น และไม่ตรงกับนักเรียน ให้ซ่อน)
+      if (a.grade && a.grade !== 'ALL' && student.grade) {
+          if (a.grade !== student.grade) return false;
+      }
+      return true;
+  });
   
   const finishedAssignments = myAssignments.filter(a => examResults.some(r => r.assignmentId === a.id));
   const pendingAssignments = myAssignments.filter(a => !examResults.some(r => r.assignmentId === a.id));
@@ -35,6 +44,8 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
     const date = new Date(dateString);
     return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
   };
+  
+  const GRADE_LABELS: Record<string, string> = { 'P1': 'ป.1', 'P2': 'ป.2', 'P3': 'ป.3', 'P4': 'ป.4', 'P5': 'ป.5', 'P6': 'ป.6' };
 
   // --- ส่วนแสดงผลหน้ารายละเอียดประวัติ ---
   if (view === 'history') {
@@ -63,10 +74,12 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
                    <div>
                      <div className="flex items-center gap-2 mb-1">
                         <span className="bg-blue-50 text-blue-600 text-xs font-bold px-2 py-1 rounded-lg">{hw.subject}</span>
+                        {hw.grade && hw.grade !== 'ALL' && <span className="bg-purple-100 text-purple-600 text-xs font-bold px-2 py-1 rounded-lg">{GRADE_LABELS[hw.grade] || hw.grade}</span>}
                         <span className="text-xs text-gray-400">{new Date(result?.timestamp || 0).toLocaleString('th-TH')}</span>
                      </div>
                      <div className="font-bold text-gray-800 text-lg">การบ้าน {hw.questionCount} ข้อ</div>
                      <div className="text-sm text-gray-500">กำหนดส่งเดิม: {formatDate(hw.deadline)}</div>
+                     {hw.createdBy && <div className="text-xs text-purple-600 mt-1">ตรวจโดย: ครู{hw.createdBy}</div>}
                    </div>
                    
                    <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end bg-gray-50 p-3 rounded-xl sm:bg-transparent sm:p-0">
@@ -104,7 +117,11 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
           <div className="text-5xl bg-white/20 p-3 rounded-full backdrop-blur-sm shadow-inner">{student.avatar}</div>
           <div>
             <h2 className="text-2xl font-bold mb-1">สวัสดี, {student.name.split(' ')[0]}!</h2>
-            <p className="text-blue-100">วันนี้เรามาฝึกฝนกันเถอะ</p>
+            <div className="flex gap-2 text-blue-100 items-center">
+                <span>ชั้น {GRADE_LABELS[student.grade || 'P6'] || student.grade}</span>
+                <span>•</span>
+                <span>{student.school || 'โรงเรียนคุณภาพ'}</span>
+            </div>
             <div className="flex items-center gap-2 mt-2 bg-black/20 w-fit px-3 py-1 rounded-full"><Star className="text-yellow-300 fill-yellow-300" size={16} /><span className="font-bold">{student.stars} คะแนนสะสม</span></div>
           </div>
         </div>
@@ -126,10 +143,16 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
                                 <div className="font-bold text-gray-800 text-lg flex items-center gap-2">
                                   {hw.subject} 
                                   {isExpired && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full border border-red-200">เลยกำหนด</span>}
+                                  {hw.grade && hw.grade !== 'ALL' && <span className="text-[10px] bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full border border-purple-200">{GRADE_LABELS[hw.grade] || hw.grade}</span>}
                                 </div>
                                 <div className={`text-sm ${isExpired ? 'text-red-500 font-medium' : 'text-gray-600'}`}>
                                   จำนวน {hw.questionCount} ข้อ • ส่งภายใน {formatDate(hw.deadline)}
                                 </div>
+                                {hw.createdBy && (
+                                   <div className="text-xs text-purple-600 mt-1 font-medium bg-purple-50 px-2 py-0.5 rounded w-fit">
+                                      มอบหมายโดย: ครู{hw.createdBy}
+                                   </div>
+                                )}
                             </div>
                             <button 
                                 onClick={() => onStartAssignment && onStartAssignment(hw)}
