@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { Teacher, Student, Subject, Assignment, Question } from '../types';
-import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, ChevronLeft, ChevronRight, Book, Calculator, FlaskConical, Languages, ArrowLeft, Users, GraduationCap, Trash2, Edit, Shield, UserCog, KeyRound, Sparkles, Wand2, Key, HelpCircle, ChevronDown, ChevronUp, AlertTriangle, Layers, Clock } from 'lucide-react';
+import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, ChevronLeft, ChevronRight, Puzzle, Music, Users, Trees, Link as LinkIcon, ArrowLeft, GraduationCap, Trash2, Edit, Shield, UserCog, KeyRound, Sparkles, Wand2, Key, HelpCircle, ChevronDown, ChevronUp, AlertTriangle, Layers, Clock } from 'lucide-react';
 import { getTeacherDashboard, manageStudent, addAssignment, addQuestion, editQuestion, manageTeacher, getAllTeachers, GOOGLE_SCRIPT_URL, deleteQuestion, deleteAssignment } from '../services/api';
 import { generateQuestionWithAI } from '../services/aiService';
 
@@ -23,7 +24,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   
   // Teacher Management State
   const [allTeachers, setAllTeachers] = useState<Teacher[]>([]);
-  const [tForm, setTForm] = useState<{ id: string, username: string, password: string, name: string, school: string, role: string, gradeLevel: string }>({ id: '', username: '', password: '', name: '', school: '', role: 'TEACHER', gradeLevel: 'ALL' });
+  const [tForm, setTForm] = useState<{ id: string, username: string, password: string, name: string, school: string, role: string, gradeLevel: string }>({ id: '', username: '', password: '', name: '', school: '', role: 'TEACHER', gradeLevel: 'P2' });
   const [isEditingTeacher, setIsEditingTeacher] = useState(false);
   const [teacherLoading, setTeacherLoading] = useState(false);
 
@@ -33,12 +34,12 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   // Student Form & Management State
   const [newStudentName, setNewStudentName] = useState('');
   const [newStudentAvatar, setNewStudentAvatar] = useState('👦');
-  const [newStudentGrade, setNewStudentGrade] = useState('P6'); 
+  // const [newStudentGrade, setNewStudentGrade] = useState('P2'); // No longer needed, always P2
   const [createdStudent, setCreatedStudent] = useState<Student | null>(null);
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   
-  // ✅ State for Accordion (Expanded Grades)
-  const [expandedGrades, setExpandedGrades] = useState<Record<string, boolean>>({});
+  // ✅ State for Accordion (Expanded Grades) - kept for structure but only P2 used
+  const [expandedGrades, setExpandedGrades] = useState<Record<string, boolean>>({'P2': true});
 
   // 🔥 Processing UI State
   const [isProcessing, setIsProcessing] = useState(false);
@@ -46,15 +47,15 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [isSaving, setIsSaving] = useState(false);
 
   // Assignment Form
-  const [assignSubject, setAssignSubject] = useState<Subject>(Subject.MATH);
-  const [assignGrade, setAssignGrade] = useState<string>('ALL'); // ✅ Default to ALL
+  const [assignSubject, setAssignSubject] = useState<Subject>(Subject.SPELLING);
+  // const [assignGrade, setAssignGrade] = useState<string>('P2'); 
   const [assignCount, setAssignCount] = useState(10);
   const [assignDeadline, setAssignDeadline] = useState('');
 
   // Question Form
-  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null); // ✅ New state for editing question
-  const [qSubject, setQSubject] = useState<Subject>(Subject.MATH);
-  const [qGrade, setQGrade] = useState('P6');
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null); 
+  const [qSubject, setQSubject] = useState<Subject>(Subject.SPELLING);
+  // const [qGrade, setQGrade] = useState('P2');
   const [qText, setQText] = useState('');
   const [qImage, setQImage] = useState('');
   const [qChoices, setQChoices] = useState({c1:'', c2:'', c3:'', c4:''});
@@ -65,7 +66,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [showAiModal, setShowAiModal] = useState(false);
   const [showAiHelp, setShowAiHelp] = useState(false); 
   const [aiTopic, setAiTopic] = useState('');
-  const [aiCount, setAiCount] = useState<number>(1); // ✅ New state for question count
+  const [aiCount, setAiCount] = useState<number>(1); 
   const [geminiApiKey, setGeminiApiKey] = useState('');
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
 
@@ -79,8 +80,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
 
   const isAdmin = (teacher.role && teacher.role.toUpperCase() === 'ADMIN') || (teacher.username && teacher.username.toLowerCase() === 'admin');
-  const GRADES = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'];
-  const GRADE_LABELS: Record<string, string> = { 'P1': 'ป.1', 'P2': 'ป.2', 'P3': 'ป.3', 'P4': 'ป.4', 'P5': 'ป.5', 'P6': 'ป.6' };
+  const GRADES = ['P2']; // Only P2
+  const GRADE_LABELS: Record<string, string> = { 'P2': 'ป.2' };
 
   // ✅ Helper to normalize ID comparison
   const normalizeId = (id: any) => {
@@ -98,21 +99,13 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       setProfileForm({ name: teacher.name, password: teacher.password || '', confirmPassword: teacher.password || '' });
   }, [teacher]);
 
-  // ✅ Toggle Accordion
-  const toggleGradeExpand = (grade: string) => {
-    setExpandedGrades(prev => ({
-        ...prev,
-        [grade]: !prev[grade]
-    }));
-  };
-
   // ✅ Group Students by Grade
   const getStudentsByGrade = () => {
       const grouped: Record<string, Student[]> = {};
       GRADES.forEach(g => grouped[g] = []);
       
       students.forEach(s => {
-          const g = s.grade || 'P6'; 
+          const g = s.grade || 'P2'; 
           if (!grouped[g]) grouped[g] = [];
           grouped[g].push(s);
       });
@@ -134,10 +127,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
     setStats(data.results || []);
     setAssignments(data.assignments || []); 
     setQuestions(data.questions || []); 
-    
-    if (teacher.gradeLevel && teacher.gradeLevel !== 'ALL') {
-        setExpandedGrades(prev => ({...prev, [teacher.gradeLevel as string]: true}));
-    }
     
     setLoading(false);
   };
@@ -195,7 +184,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
               name: profileForm.name,
               school: teacher.school,
               role: teacher.role || 'TEACHER',
-              gradeLevel: teacher.gradeLevel || 'ALL'
+              gradeLevel: 'P2' // Lock P2
           };
 
           const res = await manageTeacher(payload);
@@ -229,7 +218,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
           name: tForm.name,
           school: tForm.school,
           role: tForm.role,
-          gradeLevel: tForm.gradeLevel,
+          gradeLevel: 'P2', // Lock P2
           action: action
       };
 
@@ -237,7 +226,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
           const res = await manageTeacher(payload);
           if (res.success) {
               alert(isEditingTeacher ? 'แก้ไขข้อมูลสำเร็จ' : 'เพิ่มครูสำเร็จ (ID: ' + teacherIdToSave + ')');
-              setTForm({ id: '', username: '', password: '', name: '', school: '', role: 'TEACHER', gradeLevel: 'ALL' });
+              setTForm({ id: '', username: '', password: '', name: '', school: '', role: 'TEACHER', gradeLevel: 'P2' });
               setIsEditingTeacher(false);
               loadTeachers(); 
           } else {
@@ -281,7 +270,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             name: newStudentName,
             school: teacher.school,
             avatar: newStudentAvatar,
-            grade: newStudentGrade,
+            grade: 'P2', // Force P2
             teacherId: currentTeacherId
         });
 
@@ -298,7 +287,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             setStudents(myStudents);
             alert('✅ แก้ไขข้อมูลสำเร็จ');
         } else {
-            setStudents(prev => prev.map(s => s.id === editingStudentId ? { ...s, name: newStudentName, avatar: newStudentAvatar, grade: newStudentGrade, teacherId: currentTeacherId } : s));
+            setStudents(prev => prev.map(s => s.id === editingStudentId ? { ...s, name: newStudentName, avatar: newStudentAvatar, grade: 'P2', teacherId: currentTeacherId } : s));
             alert('✅ บันทึกข้อมูลแล้ว (กำลังซิงค์ข้อมูลเบื้องหลัง)');
         }
         
@@ -313,7 +302,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             name: newStudentName, 
             school: teacher.school, 
             avatar: newStudentAvatar, 
-            grade: newStudentGrade,
+            grade: 'P2', // Force P2
             teacherId: currentTeacherId
         });
         
@@ -321,7 +310,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             setCreatedStudent(res.student);
             setStudents(prev => [...prev, res.student!]); 
             setNewStudentName('');
-            setExpandedGrades(prev => ({...prev, [newStudentGrade]: true}));
         } else {
             const foundAdded = await verifyDataChange((list) => {
                 return list.some(s => s.name === newStudentName);
@@ -334,7 +322,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                     setCreatedStudent(fixedStudent);
                     setStudents(prev => [...prev, fixedStudent]);
                     setNewStudentName('');
-                    setExpandedGrades(prev => ({...prev, [newStudentGrade]: true}));
                 } else {
                      alert('บันทึกไม่สำเร็จ: ' + (res.message || 'ไม่ทราบสาเหตุ'));
                 }
@@ -349,7 +336,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
              setCreatedStudent(addedStudent!);
              setStudents(prev => [...prev, { ...addedStudent!, teacherId: currentTeacherId }]);
              setNewStudentName('');
-             setExpandedGrades(prev => ({...prev, [newStudentGrade]: true}));
         } else {
              alert('เชื่อมต่อไม่สำเร็จ: ' + e);
         }
@@ -362,7 +348,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       setEditingStudentId(s.id);
       setNewStudentName(s.name);
       setNewStudentAvatar(s.avatar);
-      setNewStudentGrade(s.grade || 'P6');
       const formElement = document.getElementById('student-form');
       if(formElement) formElement.scrollIntoView({ behavior: 'smooth' });
   };
@@ -398,13 +383,12 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
     setIsProcessing(true);
     setProcessingMessage('กำลังบันทึกการบ้าน...');
     
-    // ✅ ส่ง Grade ไปด้วย
-    const success = await addAssignment(teacher.school, assignSubject, assignGrade, assignCount, assignDeadline, teacher.name);
+    // ✅ ส่ง Grade P2 ไปด้วย
+    const success = await addAssignment(teacher.school, assignSubject, 'P2', assignCount, assignDeadline, teacher.name);
     
     if (success) { 
         alert('✅ สั่งการบ้านเรียบร้อยแล้ว'); 
         setAssignDeadline(''); 
-        setAssignGrade('ALL'); // ✅ Reset Grade
         await loadData(); 
     } else { 
         alert('เกิดข้อผิดพลาด'); 
@@ -432,7 +416,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const handleEditQuestion = (q: Question) => {
       setEditingQuestionId(q.id);
       setQSubject(q.subject);
-      setQGrade(q.grade || 'P6');
+      // setQGrade(q.grade || 'P2');
       setQText(q.text);
       setQImage(q.image || '');
       setQCorrect(String(q.correctChoiceId));
@@ -474,7 +458,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
     const questionPayload = { 
         id: editingQuestionId, // Send ID if editing
         subject: qSubject, 
-        grade: qGrade, 
+        grade: 'P2', // Force P2
         text: qText, 
         image: qImage, 
         c1: qChoices.c1, c2: qChoices.c2, c3: qChoices.c3, c4: qChoices.c4, 
@@ -498,7 +482,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         handleCancelQuestionEdit(); // Reset form
         await loadData(); 
     } else { 
-        alert('บันทึกไม่สำเร็จ (ตรวจสอบว่าได้อัปเดต Google Apps Script ให้รองรับฟังก์ชัน edit_question หรือยัง)'); 
+        alert('บันทึกไม่สำเร็จ'); 
     }
   };
 
@@ -525,7 +509,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
 
     setIsGeneratingAi(true);
     try {
-        const results = await generateQuestionWithAI(qSubject, qGrade, aiTopic, geminiApiKey, aiCount);
+        // AI Generate for P2
+        const results = await generateQuestionWithAI(qSubject, 'P2', aiTopic, geminiApiKey, aiCount);
         
         if (results && results.length > 0) {
             
@@ -536,7 +521,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 setQChoices({ c1: result.c1, c2: result.c2, c3: result.c3, c4: result.c4 });
                 setQCorrect(result.correct);
                 setQExplain(result.explanation);
-                setQImage(result.image || ''); // ✅ ใส่ URL รูปภาพลงฟอร์ม
+                setQImage(result.image || ''); 
                 
                 alert("✨ สร้างโจทย์สำเร็จ! \n\nข้อมูลได้ถูกกรอกลงในแบบฟอร์มแล้ว \nท่านสามารถแก้ไข/ปรับปรุงโจทย์ได้ตามต้องการ ก่อนกด 'บันทึกข้อสอบ' ครับ");
             } else {
@@ -556,9 +541,9 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                     setProcessingMessage(`กำลังบันทึกข้อสอบ ${i + 1}/${results.length}...`);
                     await addQuestion({
                         subject: qSubject,
-                        grade: qGrade,
+                        grade: 'P2',
                         text: q.text,
-                        image: q.image || '', // ✅ บันทึกรูปภาพ (ถ้ามี)
+                        image: q.image || '', 
                         c1: q.c1, c2: q.c2, c3: q.c3, c4: q.c4,
                         correct: q.correct,
                         explanation: q.explanation,
@@ -603,16 +588,14 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
           if (q.subject !== qBankSubject) return false; 
           const isCenter = q.school === 'CENTER' || q.school === 'Admin';
           
-          // Robust "Is Mine" check with name/school fallback
           const isMine = isAdmin || 
                          (currentTid && normalizeId(q.teacherId) === currentTid) || 
                          (!q.teacherId && q.school === teacher.school && q.school !== 'CENTER' && q.school !== 'Admin');
           
           if (isMine) return true;
           if (!isCenter && q.school !== teacher.school) return false;
-          if (!teacher.gradeLevel || teacher.gradeLevel === 'ALL') return true; 
-          if (q.grade === 'ALL') return true; 
-          return q.grade === teacher.gradeLevel; 
+          // Grade is always P2 or ALL
+          return true; 
       }); 
   };
   
@@ -646,13 +629,10 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
           <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center p-4 backdrop-blur-sm">
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-fade-in overflow-hidden border-2 border-indigo-100">
                   <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-4 text-white flex justify-between items-center">
-                      <h3 className="font-bold text-lg flex items-center gap-2"><Sparkles size={20} className="text-yellow-300" /> ให้ AI ช่วยออกข้อสอบ</h3>
+                      <h3 className="font-bold text-lg flex items-center gap-2"><Sparkles size={20} className="text-yellow-300" /> ให้ AI ช่วยออกข้อสอบภาษาไทย ป.2</h3>
                       <button onClick={() => setShowAiModal(false)} className="hover:bg-white/20 p-1 rounded-lg transition"><X size={20}/></button>
                   </div>
                   <div className="p-6">
-                      <p className="text-sm text-gray-500 mb-4">
-                          ระบบจะสร้างโจทย์ 4 ตัวเลือกพร้อมเฉลยให้อัตโนมัติ โดยอ้างอิงจากวิชาและระดับชั้นที่คุณเลือกไว้
-                      </p>
                       
                       {/* API Key Input with Help Toggle */}
                       <div className="mb-4 bg-indigo-50 p-3 rounded-xl border border-indigo-100">
@@ -689,19 +669,17 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                       </div>
 
                       <div className="bg-gray-50 p-3 rounded-xl mb-4 text-sm flex gap-2">
-                          <span className="font-bold text-gray-700">วิชา:</span> {qSubject}
-                          <span className="text-gray-300">|</span>
-                          <span className="font-bold text-gray-700">ชั้น:</span> {qGrade}
+                          <span className="font-bold text-gray-700">เรื่อง:</span> {qSubject}
                       </div>
 
                       <div className="mb-4">
-                          <label className="block text-sm font-bold text-gray-700 mb-2">ระบุเรื่องที่ต้องการ (Topic)</label>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">ระบุรายละเอียดเพิ่มเติม</label>
                           <input 
                             type="text" 
                             value={aiTopic}
                             onChange={(e) => setAiTopic(e.target.value)}
                             className="w-full p-3 border-2 border-indigo-100 rounded-xl focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 outline-none transition"
-                            placeholder="เช่น เศษส่วน, พืชใบเลี้ยงคู่, คำราชาศัพท์..."
+                            placeholder="เช่น แม่กด, อักษรกลาง, คำที่ใช้ รร..."
                           />
                       </div>
 
@@ -737,9 +715,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                               <><Wand2 size={18} /> {aiCount === 1 ? 'สร้าง 1 ข้อ' : 'สร้างและบันทึก 5 ข้อ'}</>
                           )}
                       </button>
-                      <p className="text-xs text-center text-gray-400 mt-2">
-                          * ระบบจะบันทึก Key ไว้ในเครื่องของคุณเพื่อความสะดวกในครั้งต่อไป
-                      </p>
                   </div>
               </div>
           </div>
@@ -747,11 +722,10 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
 
       <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-6 rounded-b-3xl md:rounded-3xl shadow-lg mb-8 flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold flex items-center gap-2"><GraduationCap size={28} /> ห้องพักครู</h2>
+          <h2 className="text-2xl font-bold flex items-center gap-2"><GraduationCap size={28} /> ห้องพักครู (ภาษาไทย ป.2)</h2>
           <div className="opacity-90 text-sm mt-1 flex gap-2">
              <span>{teacher.school} • คุณครู{teacher.name}</span>
              {teacher.id && <span className="bg-black/20 px-2 rounded text-xs font-mono flex items-center gap-1"><Shield size={10}/> ID: {teacher.id}</span>}
-             {isAdmin && <span className="text-yellow-300 font-bold">⭐(Admin)</span>}
           </div>
         </div>
         <button onClick={onLogout} className="bg-white/20 hover:bg-white/30 p-2 rounded-xl transition backdrop-blur-sm"><LogOut size={20} /></button>
@@ -759,8 +733,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
 
       {activeTab === 'menu' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 px-4 md:px-0">
-            <MenuCard icon={<UserPlus size={40} />} title="จัดการนักเรียน" desc="ลงทะเบียนนักเรียนใหม่" color="bg-purple-50 text-purple-600 border-purple-200" onClick={() => setActiveTab('students')} />
-            <MenuCard icon={<Calendar size={40} />} title="สั่งการบ้าน" desc="มอบหมายงานและติดตาม" color="bg-orange-50 text-orange-600 border-orange-200" onClick={() => setActiveTab('assignments')} />
+            <MenuCard icon={<UserPlus size={40} />} title="จัดการนักเรียน" desc="ลงทะเบียนนักเรียน ป.2" color="bg-purple-50 text-purple-600 border-purple-200" onClick={() => setActiveTab('students')} />
+            <MenuCard icon={<Calendar size={40} />} title="สั่งการบ้าน" desc="มอบหมายงานภาษาไทย" color="bg-orange-50 text-orange-600 border-orange-200" onClick={() => setActiveTab('assignments')} />
             <MenuCard icon={<BarChart2 size={40} />} title="ดูผลคะแนน" desc="สถิติการสอบ" color="bg-green-50 text-green-600 border-green-200" onClick={() => setActiveTab('stats')} />
             <MenuCard icon={<FileText size={40} />} title="คลังข้อสอบ" desc="เพิ่มและจัดการข้อสอบ" color="bg-blue-50 text-blue-600 border-blue-200" onClick={() => setActiveTab('questions')} />
             <MenuCard icon={<Gamepad2 size={40} />} title="จัดกิจกรรมเกม" desc="เปิดห้องแข่งขัน Real-time" color="bg-pink-50 text-pink-600 border-pink-200" onClick={onStartGame} />
@@ -777,6 +751,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             
             {activeTab === 'profile' && (
                 <div className="max-w-xl mx-auto">
+                    {/* (Profile UI - Same as before) */}
                     <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2 mb-6 border-b pb-4">
                         <UserCog className="text-teal-600"/> จัดการข้อมูลส่วนตัว
                     </h3>
@@ -811,89 +786,14 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 </div>
             )}
 
-            {activeTab === 'teachers' && isAdmin && (
-                <div>
-                    <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2"><Shield className="text-slate-600"/> จัดการข้อมูลครู</h3>
-                        <button onClick={loadTeachers} className="text-sm bg-slate-100 hover:bg-slate-200 px-3 py-1 rounded-lg text-slate-600 flex items-center gap-1"><RefreshCw size={14}/> รีเฟรช</button>
-                    </div>
-                    
-                    <div className="grid md:grid-cols-3 gap-6">
-                        <div className="md:col-span-1 bg-slate-50 p-6 rounded-2xl border border-slate-200 h-fit shadow-sm">
-                            <h4 className="font-bold text-gray-700 mb-4 border-b pb-2">{isEditingTeacher ? '✏️ แก้ไขข้อมูล' : '➕ เพิ่มครูใหม่'}</h4>
-                            <div className="space-y-3">
-                                {isEditingTeacher && <div className="text-xs text-gray-400 font-mono">ID: {tForm.id}</div>}
-                                <input type="text" placeholder="Username" value={tForm.username} onChange={e=>setTForm({...tForm, username:e.target.value})} className="w-full p-2 border rounded-lg bg-white"/>
-                                <input type="text" placeholder="Password" value={tForm.password} onChange={e=>setTForm({...tForm, password:e.target.value})} className="w-full p-2 border rounded-lg bg-white"/>
-                                <input type="text" placeholder="ชื่อ-นามสกุล" value={tForm.name} onChange={e=>setTForm({...tForm, name:e.target.value})} className="w-full p-2 border rounded-lg bg-white"/>
-                                <input type="text" placeholder="โรงเรียน" value={tForm.school} onChange={e=>setTForm({...tForm, school:e.target.value})} className="w-full p-2 border rounded-lg bg-white"/>
-                                
-                                <div className="grid grid-cols-2 gap-2">
-                                    <select value={tForm.role} onChange={e=>setTForm({...tForm, role:e.target.value})} className="p-2 border rounded-lg bg-white">
-                                        <option value="TEACHER">ครูทั่วไป</option>
-                                        <option value="ADMIN">ผู้ดูแลระบบ</option>
-                                    </select>
-                                    <select value={tForm.gradeLevel} onChange={e=>setTForm({...tForm, gradeLevel:e.target.value})} className="p-2 border rounded-lg bg-white">
-                                        <option value="ALL">ทุกชั้น</option>
-                                        {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
-                                    </select>
-                                </div>
-
-                                <div className="flex gap-2 pt-2">
-                                    {isEditingTeacher && <button onClick={()=>{setIsEditingTeacher(false); setTForm({ id: '', username: '', password: '', name: '', school: '', role: 'TEACHER', gradeLevel: 'ALL' });}} className="bg-gray-200 px-4 py-2 rounded-lg text-sm">ยกเลิก</button>}
-                                    <button onClick={handleSaveTeacher} disabled={isProcessing} className="flex-1 bg-slate-700 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-slate-800">{isProcessing ? 'รอสักครู่...' : (isEditingTeacher ? 'บันทึกแก้ไข' : 'เพิ่มข้อมูล')}</button>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="md:col-span-2 overflow-x-auto bg-white rounded-2xl border border-gray-200 shadow-sm">
-                            {teacherLoading ? (
-                                <div className="p-10 text-center text-gray-400 animate-pulse">กำลังโหลดรายชื่อ...</div>
-                            ) : (
-                                <table className="w-full text-sm text-left">
-                                    <thead className="bg-slate-100 text-slate-700 border-b">
-                                        <tr><th className="p-3">ID</th><th className="p-3">ชื่อ</th><th className="p-3">User</th><th className="p-3">Pass</th><th className="p-3">โรงเรียน</th><th className="p-3">สิทธิ์</th><th className="p-3 text-right">จัดการ</th></tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-100">
-                                        {allTeachers.length === 0 ? (
-                                            <tr><td colSpan={7} className="p-6 text-center text-gray-400">ไม่พบข้อมูลครู</td></tr>
-                                        ) : (
-                                            allTeachers.map((t) => (
-                                                <tr key={t.id} className="hover:bg-slate-50 transition-colors">
-                                                    <td className="p-3 font-mono text-xs text-gray-400">{t.id}</td>
-                                                    <td className="p-3 font-bold text-gray-800">{t.name}</td>
-                                                    <td className="p-3 text-gray-500">{t.username}</td>
-                                                    <td className="p-3 text-gray-400 font-mono">{t.password}</td>
-                                                    <td className="p-3 text-gray-600">{t.school}</td>
-                                                    <td className="p-3"><span className={`px-2 py-0.5 rounded text-xs font-bold ${t.role==='ADMIN'?'bg-red-100 text-red-700':'bg-blue-100 text-blue-700'}`}>{t.role}</span></td>
-                                                    <td className="p-3 flex justify-end gap-2">
-                                                        <button onClick={()=>{setIsEditingTeacher(true); setTForm({ id: String(t.id) || '', username: t.username || '', password: t.password || '', name: t.name, school: t.school, role: t.role || 'TEACHER', gradeLevel: t.gradeLevel || 'ALL' });}} className="text-blue-600 hover:bg-blue-100 p-1.5 rounded transition"><Edit size={16}/></button>
-                                                        <button onClick={()=>handleDeleteTeacher(String(t.id))} className="text-red-500 hover:bg-red-100 p-1.5 rounded transition"><Trash2 size={16}/></button>
-                                                    </td>
-                                                </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
-
             {/* Students Tab */}
             {activeTab === 'students' && (
                 <div className="grid md:grid-cols-2 gap-8">
                   <div id="student-form">
                     <h3 className="text-lg font-bold text-gray-800 mb-4">
-                        {editingStudentId ? <span className="text-orange-600 flex items-center gap-2">✏️ กำลังแก้ไขข้อมูลนักเรียน</span> : 'ลงทะเบียนนักเรียนใหม่'}
+                        {editingStudentId ? <span className="text-orange-600 flex items-center gap-2">✏️ กำลังแก้ไขข้อมูลนักเรียน</span> : 'ลงทะเบียนนักเรียนใหม่ (ป.2)'}
                     </h3>
                     <div className={`p-6 rounded-2xl border border-gray-200 transition-colors ${editingStudentId ? 'bg-orange-50 border-orange-200' : 'bg-gray-50'}`}>
-                      <div className="mb-4">
-                          <label className="block text-sm font-medium text-gray-600 mb-2">ระดับชั้น</label>
-                          <select value={newStudentGrade} onChange={(e)=>setNewStudentGrade(e.target.value)} className="w-full p-3 border rounded-xl bg-white text-gray-900">
-                              {GRADES.map(g => <option key={g} value={g}>{GRADE_LABELS[g]}</option>)}
-                          </select>
-                      </div>
                       <label className="block text-sm font-medium text-gray-600 mb-2">ชื่อ-นามสกุล</label>
                       <input type="text" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} className="w-full p-3 border rounded-xl mb-4 focus:ring-2 focus:ring-purple-200 outline-none text-gray-800 bg-white" placeholder="ด.ช. มานะ อดทน" />
                       <div className="bg-purple-50 p-3 rounded-xl mb-4 border border-purple-100"><span className="text-xs text-purple-600 font-bold uppercase">สังกัดโรงเรียน</span><p className="text-gray-800 font-medium truncate">{teacher.school}</p></div>
@@ -913,51 +813,25 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                     <div className="mt-6">
                       <div className="flex justify-between items-center mb-2"><h4 className="text-sm font-bold text-gray-500">รายชื่อนักเรียน ({students.length})</h4><button onClick={loadData} className="text-purple-600 hover:bg-purple-50 p-1 rounded"><RefreshCw size={14}/></button></div>
                       
-                      {/* ✅ Accordion Student List */}
-                      <div className="space-y-2">
-                        {GRADES.map(grade => {
-                            const studentsInGrade = studentsByGrade[grade];
-                            if (studentsInGrade.length === 0) return null;
-                            const isExpanded = expandedGrades[grade];
-
-                            return (
-                                <div key={grade} className="border border-gray-200 rounded-xl overflow-hidden bg-white">
-                                    <button 
-                                        onClick={() => toggleGradeExpand(grade)}
-                                        className={`w-full flex justify-between items-center p-3 text-left transition-colors ${isExpanded ? 'bg-purple-50 text-purple-800' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
-                                    >
-                                        <div className="font-bold flex items-center gap-2">
-                                            {GRADE_LABELS[grade]} <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">{studentsInGrade.length} คน</span>
+                      {/* List without Grade Accordion (Since it's only P2) */}
+                      <div className="border border-gray-200 rounded-xl overflow-hidden bg-white max-h-[400px] overflow-y-auto divide-y divide-gray-100">
+                            {students.map(s => (
+                                <div key={s.id} className={`flex items-center p-3 gap-3 hover:bg-gray-50 ${editingStudentId === s.id ? 'bg-orange-50' : ''}`}>
+                                    <div className="flex-shrink-0 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-lg">{s.avatar}</div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-bold text-gray-800 truncate">{s.name}</p>
+                                        <div className="flex gap-1">
+                                            <span className="text-sm text-gray-400 bg-gray-50 px-1 py-0.5 rounded border">ID: {s.id}</span>
                                         </div>
-                                        {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                                    </button>
-
-                                    {isExpanded && (
-                                        <div className="divide-y divide-gray-100 border-t border-gray-100 max-h-[300px] overflow-y-auto">
-                                            {studentsInGrade.map(s => (
-                                                <div key={s.id} className={`flex items-center p-3 gap-3 hover:bg-gray-50 ${editingStudentId === s.id ? 'bg-orange-50' : ''}`}>
-                                                    <div className="flex-shrink-0 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-lg">{s.avatar}</div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-sm font-bold text-gray-800 truncate">{s.name}</p>
-                                                        <div className="flex gap-1">
-                                                            <span className="text-sm text-gray-400 bg-gray-50 px-1 py-0.5 rounded border">ID: {s.id}</span>
-                                                            {s.teacherId && <span className="text-[10px] text-gray-400 bg-gray-50 px-1 py-0.5 rounded border">T: {String(s.teacherId).slice(-4)}</span>}
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex gap-1">
-                                                        <button onClick={() => handleEditStudent(s)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="แก้ไข"><Edit size={14}/></button>
-                                                        <button onClick={() => handleDeleteStudent(s.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="ลบ"><Trash2 size={14}/></button>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
+                                    </div>
+                                    <div className="flex gap-1">
+                                        <button onClick={() => handleEditStudent(s)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="แก้ไข"><Edit size={14}/></button>
+                                        <button onClick={() => handleDeleteStudent(s.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="ลบ"><Trash2 size={14}/></button>
+                                    </div>
                                 </div>
-                            );
-                        })}
+                            ))}
+                            {students.length === 0 && <div className="p-6 text-center text-gray-400">ยังไม่มีนักเรียน</div>}
                       </div>
-                      
-                      {students.length === 0 && <div className="p-4 text-center text-gray-400 text-sm border-2 border-dashed rounded-xl mt-2">ยังไม่มีนักเรียนในระบบ</div>}
                     </div>
                   </div>
                   {/* Student Card Preview */}
@@ -970,7 +844,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                           <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center text-6xl mx-auto mb-4 shadow-inner">{createdStudent.avatar}</div>
                           <h3 className="text-xl font-bold text-gray-800 mb-1">{createdStudent.name}</h3>
                           <div className="flex justify-center gap-2 mb-6">
-                              <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-xs font-bold">{GRADE_LABELS[createdStudent.grade||'P6']}</span>
+                              <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-xs font-bold">ป.2</span>
                               <span className="text-gray-500 text-xs">{createdStudent.school}</span>
                           </div>
                           <div className="bg-gray-100 rounded-xl p-3 mb-2"><span className="block text-xs text-gray-400 mb-1">รหัสเข้าใช้งาน (ID)</span><span className="text-3xl font-mono font-black text-purple-600 tracking-widest">{createdStudent.id}</span></div>
@@ -986,19 +860,12 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
               // Assignment Content
               <div className="max-w-4xl mx-auto">
                  <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 mb-8">
-                    <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Calendar className="text-orange-500"/> สั่งงานใหม่</h4>
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                        <div>
-                            <label className="text-xs font-bold text-gray-500 block mb-1">วิชา</label>
+                    <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Calendar className="text-orange-500"/> สั่งงานใหม่ (ป.2)</h4>
+                    <div className="grid md:grid-cols-4 gap-4">
+                        <div className="md:col-span-2">
+                            <label className="text-xs font-bold text-gray-500 block mb-1">เรื่อง</label>
                             <select value={assignSubject} onChange={(e) => setAssignSubject(e.target.value as Subject)} className="w-full p-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-orange-200 outline-none">
                                 {Object.values(Subject).map((s) => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="text-xs font-bold text-gray-500 block mb-1">ระดับชั้น</label>
-                            <select value={assignGrade} onChange={(e) => setAssignGrade(e.target.value)} className="w-full p-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-orange-200 outline-none">
-                                <option value="ALL">ทุกชั้น</option>
-                                {GRADES.map(g => <option key={g} value={g}>{GRADE_LABELS[g]}</option>)}
                             </select>
                         </div>
                         <div>
@@ -1009,7 +876,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                             <label className="text-xs font-bold text-gray-500 block mb-1">ส่งภายใน</label>
                             <input type="date" value={assignDeadline} onChange={(e) => setAssignDeadline(e.target.value)} className="w-full p-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-orange-200 outline-none" />
                         </div>
-                        <div className="flex items-end md:col-span-1 col-span-2">
+                        <div className="flex items-end md:col-span-4">
                             <button onClick={handleCreateAssignment} disabled={isProcessing} className="w-full bg-orange-500 text-white py-2 rounded-lg font-bold shadow hover:bg-orange-600 disabled:opacity-50 flex items-center justify-center gap-2 h-[42px]">
                                 {isProcessing ? 'กำลังบันทึก...' : <><Save size={16}/> สั่งงาน</>}
                             </button>
@@ -1027,7 +894,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                      <div className="overflow-x-auto bg-white rounded-xl shadow-sm border border-gray-200">
                          <table className="w-full text-sm text-left">
                              <thead className="bg-orange-50 text-orange-900">
-                                 <tr><th className="p-3">วิชา</th><th className="p-3">ชั้น</th><th className="p-3 text-center">จำนวนข้อ</th><th className="p-3">กำหนดส่ง</th><th className="p-3 text-center">คนส่งแล้ว</th><th className="p-3 text-right">จัดการ</th></tr>
+                                 <tr><th className="p-3">เรื่อง</th><th className="p-3 text-center">จำนวนข้อ</th><th className="p-3">กำหนดส่ง</th><th className="p-3 text-center">คนส่งแล้ว</th><th className="p-3 text-right">จัดการ</th></tr>
                              </thead>
                              <tbody>
                                  {assignments.slice().reverse().map((a) => {
@@ -1040,7 +907,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                      return (
                                          <tr key={a.id} className="border-b hover:bg-gray-50 last:border-0">
                                              <td className="p-3 font-bold text-gray-900">{a.subject}</td>
-                                             <td className="p-3 text-gray-600">{a.grade === 'ALL' ? 'ทุกชั้น' : GRADE_LABELS[a.grade || ''] || a.grade}</td>
                                              <td className="p-3 text-center text-gray-900">{a.questionCount}</td>
                                              <td className={`p-3 font-medium ${isExpired ? 'text-red-600' : 'text-gray-900'}`}>
                                                  {formatDate(a.deadline)} {isExpired && '(หมดเขต)'}
@@ -1074,48 +940,12 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
               </div>
             )}
 
-            {activeTab === 'stats' && (
-              <div>
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-bold text-gray-800">ผลการเรียนของนักเรียน ({students.length} คน)</h3>
-                  <button onClick={loadData} className="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-lg text-gray-600 flex items-center gap-1"><RefreshCw size={14}/> รีเฟรช</button>
-                </div>
-                {loading ? <div className="text-center py-10 text-gray-400">กำลังโหลด...</div> : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm border-collapse">
-                      <thead className="bg-purple-50 text-purple-900 border-b border-purple-100">
-                        <tr><th className="p-4 rounded-tl-xl w-20 text-center">รูป</th><th className="p-4">ข้อมูลนักเรียน</th><th className="p-4 text-center">สถานะ</th><th className="p-4 rounded-tr-xl text-right">คะแนนล่าสุด</th></tr>
-                      </thead>
-                      <tbody>
-                        {students.map(s => {
-                          const score = getStudentScore(s.id);
-                          return (
-                            <tr key={s.id} className="border-b hover:bg-gray-50 transition-colors">
-                              <td className="p-3 text-center"><div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center text-3xl mx-auto">{s.avatar || '👤'}</div></td>
-                              <td className="p-3 align-middle"><div className="font-bold text-gray-900 text-base mb-1">{s.name}</div><span className="text-xs text-gray-500 bg-white border border-gray-200 px-2 py-0.5 rounded">ID: {s.id}</span></td>
-                              <td className="p-3 text-center align-middle">{score ? <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-800 border border-green-200">สอบแล้ว</span> : <span className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-500 border border-gray-200">ยังไม่สอบ</span>}</td>
-                              <td className="p-3 text-right align-middle">{score ? <div><span className="text-xl font-bold text-purple-700">{score.score}</span><span className="text-gray-500 text-sm">/{score.total}</span></div> : <span className="text-gray-300">-</span>}</td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-            
+            {/* Questions Tab */}
             {activeTab === 'questions' && (
                <div className="max-w-6xl mx-auto">
                   <div className="flex justify-between items-center mb-6">
                       <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                         <FileText className="text-blue-600" /> คลังข้อสอบ 
-                        {/* Show filter badge only if not in "My Questions" mode */}
-                        {!showMyQuestionsOnly && (
-                            <span className="text-sm font-normal text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                              แสดงเฉพาะชั้น {teacher.gradeLevel || 'ทั้งหมด'}
-                            </span>
-                        )}
                       </h3>
                       <div className="flex gap-2">
                          {/* ✅ Toggle Button for "My Questions" */}
@@ -1154,20 +984,13 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                         )}
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4 mb-4">
-                         <div>
-                            <label className="block text-xs font-bold text-gray-500 mb-1">วิชา</label>
+                      <div className="mb-4">
+                            <label className="block text-xs font-bold text-gray-500 mb-1">เรื่อง</label>
                             <select value={qSubject} onChange={(e)=>setQSubject(e.target.value as Subject)} className="w-full p-2 border rounded-lg bg-white text-gray-900">
                                  {Object.values(Subject).map(s=><option key={s} value={s}>{s}</option>)}
                             </select>
-                         </div>
-                         <div>
-                            <label className="block text-xs font-bold text-gray-500 mb-1">ระดับชั้น</label>
-                            <select value={qGrade} onChange={(e)=>setQGrade(e.target.value)} className="w-full p-2 border rounded-lg bg-white text-gray-900">
-                                 {GRADES.map(g=><option key={g} value={g}>{GRADE_LABELS[g]}</option>)}
-                            </select>
-                         </div>
                       </div>
+                      
                       <div className="mb-4">
                          <label className="block text-xs font-bold text-gray-500 mb-1">โจทย์คำถาม</label>
                          <textarea value={qText} onChange={(e)=>setQText(e.target.value)} className="w-full p-2 border rounded-lg bg-white text-gray-900" rows={2} placeholder="พิมพ์โจทย์..."></textarea>
@@ -1205,12 +1028,13 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
     
                   {/* 1. ปุ่มเลือกวิชา (Filter) */}
                   {!showMyQuestionsOnly && (
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
                          {[
-                            { id: Subject.MATH, icon: <Calculator />, color: 'bg-red-100 text-red-700 border-red-200' },
-                            { id: Subject.THAI, icon: <Book />, color: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
-                            { id: Subject.SCIENCE, icon: <FlaskConical />, color: 'bg-green-100 text-green-700 border-green-200' },
-                            { id: Subject.ENGLISH, icon: <Languages />, color: 'bg-blue-100 text-blue-700 border-blue-200' }
+                            { id: Subject.SPELLING, icon: <Puzzle />, color: 'bg-red-100 text-red-700 border-red-200' },
+                            { id: Subject.TONES, icon: <Music />, color: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
+                            { id: Subject.CLUSTERS, icon: <Users />, color: 'bg-green-100 text-green-700 border-green-200' },
+                            { id: Subject.ROHAN, icon: <Trees />, color: 'bg-blue-100 text-blue-700 border-blue-200' },
+                            { id: Subject.RHYMES, icon: <LinkIcon />, color: 'bg-purple-100 text-purple-700 border-purple-200' }
                          ].map(sub => (
                             <button 
                                 key={sub.id}
@@ -1222,7 +1046,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                 }`}
                             >
                                 <div className="text-3xl">{sub.icon}</div>
-                                <span className="font-bold">{sub.id}</span>
+                                <span className="font-bold text-xs">{sub.id}</span>
                             </button>
                          ))}
                       </div>
@@ -1233,7 +1057,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden animate-fade-in">
                           <div className={`p-4 border-b flex justify-between items-center ${showMyQuestionsOnly ? 'bg-purple-50' : 'bg-gray-50'}`}>
                               <span className={`font-bold ${showMyQuestionsOnly ? 'text-purple-900' : 'text-gray-700'}`}>
-                                  {showMyQuestionsOnly ? 'รายการข้อสอบของคุณ (ทั้งหมด)' : `รายการข้อสอบวิชา ${qBankSubject}`}
+                                  {showMyQuestionsOnly ? 'รายการข้อสอบของคุณ (ทั้งหมด)' : `รายการข้อสอบ: ${qBankSubject}`}
                               </span>
                               <span className="text-xs text-gray-400">ทั้งหมด {filteredQuestions.length} ข้อ</span>
                           </div>
@@ -1254,13 +1078,10 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                           <div className="flex justify-between items-start mb-3">
                                               <div className="flex gap-2">
                                                   <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded">ข้อ {((qBankPage-1)*ITEMS_PER_PAGE) + idx + 1}</span>
-                                                  <span className="bg-gray-100 text-gray-600 text-xs font-bold px-2 py-1 rounded">ชั้น {q.grade}</span>
                                                   <span className={`text-xs px-2 py-1 rounded font-bold ${q.school === 'CENTER' || q.school === 'Admin' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
                                                       {q.school === 'CENTER' || q.school === 'Admin' ? 'ส่วนกลาง' : 'โรงเรียนเรา'}
                                                   </span>
                                                   {isMine && <span className="text-xs bg-purple-200 text-purple-800 px-2 py-1 rounded font-bold">ของฉัน</span>}
-                                                  {/* Show Subject Badge if listing all my questions */}
-                                                  {showMyQuestionsOnly && <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded border">{q.subject}</span>}
                                               </div>
                                               <div className="flex items-center gap-2">
                                                   <span className="text-xs text-gray-300 font-mono">ID: {q.id}</span>
@@ -1336,126 +1157,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             )}
         </div>
       )}
-
-      {/* ✅ MODAL: View Progress (Improved) */}
-      {selectedAssignment && (
-          <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
-              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col animate-fade-in border border-gray-200">
-                  <div className="p-5 border-b flex justify-between items-center bg-gray-50">
-                      <div>
-                          <h3 className="font-bold text-xl text-gray-800 flex items-center gap-2"><Calendar size={22} className="text-blue-600"/> ติดตามการส่งงาน</h3>
-                          <p className="text-xs text-gray-500 mt-1">รายการนักเรียนที่ได้รับมอบหมาย</p>
-                      </div>
-                      <button onClick={() => setSelectedAssignment(null)} className="bg-white p-2 rounded-full border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-200 transition shadow-sm"><X size={20}/></button>
-                  </div>
-                  
-                  <div className="p-5 bg-blue-50/50 border-b border-blue-100 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-                      <div>
-                          <div className="flex items-center gap-2 mb-1">
-                              <span className="bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded">{selectedAssignment.subject}</span>
-                              <span className="bg-purple-100 text-purple-700 text-xs font-bold px-2 py-0.5 rounded border border-purple-200">
-                                {selectedAssignment.grade === 'ALL' ? 'ทุกระดับชั้น' : GRADE_LABELS[selectedAssignment.grade || ''] || selectedAssignment.grade}
-                              </span>
-                          </div>
-                          <div className="font-bold text-blue-900 text-lg">จำนวน {selectedAssignment.questionCount} ข้อ</div>
-                      </div>
-                      <div className="text-right">
-                          <div className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-1">กำหนดส่ง</div>
-                          <div className="text-red-600 font-bold bg-white px-3 py-1 rounded-lg border border-red-100 shadow-sm inline-block">
-                              {formatDate(selectedAssignment.deadline)}
-                          </div>
-                      </div>
-                  </div>
-
-                  <div className="overflow-y-auto p-0 flex-1 bg-white">
-                      {(() => {
-                          // 1. Filter students by Grade
-                          let targetStudents = students;
-                          if (selectedAssignment.grade && selectedAssignment.grade !== 'ALL') {
-                              targetStudents = students.filter(s => s.grade === selectedAssignment.grade);
-                          }
-
-                          if (targetStudents.length === 0) {
-                              return (
-                                  <div className="flex flex-col items-center justify-center h-64 text-gray-400">
-                                      <Users size={48} className="mb-2 opacity-20"/>
-                                      <p>ไม่มีนักเรียนในระดับชั้นนี้</p>
-                                  </div>
-                              );
-                          }
-
-                          // 2. Map status and sort
-                          const studentStatus = targetStudents.map(s => {
-                              const result = stats.filter(r => r.assignmentId === selectedAssignment.id && String(r.studentId) === String(s.id)).pop();
-                              return { student: s, result };
-                          });
-
-                          // Sort: Submitted first, then by Name
-                          studentStatus.sort((a, b) => {
-                              if (a.result && !b.result) return -1;
-                              if (!a.result && b.result) return 1;
-                              return a.student.name.localeCompare(b.student.name);
-                          });
-
-                          const submittedCount = studentStatus.filter(i => i.result).length;
-
-                          return (
-                              <div>
-                                  <div className="bg-gray-100 px-5 py-2 text-xs font-bold text-gray-500 flex justify-between">
-                                      <span>รายชื่อ ({targetStudents.length})</span>
-                                      <span className={submittedCount === targetStudents.length ? "text-green-600" : "text-blue-600"}>
-                                          ส่งแล้ว {submittedCount}/{targetStudents.length} คน
-                                      </span>
-                                  </div>
-                                  <table className="w-full text-sm text-left">
-                                      <tbody className="divide-y divide-gray-100">
-                                          {studentStatus.map(({ student, result }) => (
-                                              <tr key={student.id} className={`hover:bg-gray-50 transition-colors ${result ? 'bg-green-50/30' : ''}`}>
-                                                  <td className="p-4">
-                                                      <div className="flex items-center gap-3">
-                                                          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-lg border border-gray-200 shadow-sm">
-                                                              {student.avatar}
-                                                          </div>
-                                                          <div>
-                                                              <div className="font-bold text-gray-800">{student.name}</div>
-                                                              <div className="text-xs text-gray-400 font-mono">ID: {student.id}</div>
-                                                          </div>
-                                                      </div>
-                                                  </td>
-                                                  <td className="p-4 text-center">
-                                                      {result ? (
-                                                          <span className="inline-flex items-center gap-1 text-green-700 bg-green-100 px-2 py-1 rounded-md text-xs font-bold border border-green-200">
-                                                              <CheckCircle size={12}/> ส่งแล้ว
-                                                          </span>
-                                                      ) : (
-                                                          <span className="inline-flex items-center gap-1 text-gray-400 bg-gray-100 px-2 py-1 rounded-md text-xs font-bold border border-gray-200">
-                                                              <Clock size={12}/> ยังไม่ส่ง
-                                                          </span>
-                                                      )}
-                                                  </td>
-                                                  <td className="p-4 text-right">
-                                                      {result ? (
-                                                          <div>
-                                                              <span className="text-lg font-black text-blue-600">{result.score}</span>
-                                                              <span className="text-gray-400 text-xs">/{result.totalQuestions}</span>
-                                                          </div>
-                                                      ) : <span className="text-gray-300">-</span>}
-                                                  </td>
-                                                  <td className="p-4 text-right text-xs text-gray-500">
-                                                      {result ? new Date(result.timestamp).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '-'}
-                                                  </td>
-                                              </tr>
-                                          ))}
-                                      </tbody>
-                                  </table>
-                              </div>
-                          );
-                      })()}
-                  </div>
-              </div>
-          </div>
-      )}
-
     </div>
   );
 };

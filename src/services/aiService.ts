@@ -9,13 +9,11 @@ export interface GeneratedQuestion {
   c4: string;
   correct: string;
   explanation: string;
-  image?: string; // ✅ เพิ่ม URL รูปภาพ
+  image?: string; 
 }
 
-// ฟังก์ชันสร้าง URL รูปภาพจาก Pollinations.ai
 const generateImageUrl = (description: string): string => {
   if (!description || description.trim().length === 0 || description.toLowerCase() === 'none') return '';
-  // เพิ่ม Prompt ให้ภาพออกมาน่ารักเหมาะกับเด็ก
   const encodedPrompt = encodeURIComponent(description + " cartoon style, for kids, educational, white background, simple, clear, high quality");
   return `https://image.pollinations.ai/prompt/${encodedPrompt}?nologo=true`;
 };
@@ -35,18 +33,20 @@ export const generateQuestionWithAI = async (
     const ai = new GoogleGenAI({ apiKey: apiKey });
     const model = "gemini-2.5-flash";
     
+    // Updated Prompt for Thai Grade 2
     const prompt = `
-      Create ${count} multiple-choice question(s) for ${grade} grade students.
-      Subject: ${subject}
-      Topic: ${topic}
-      Language: Thai (Make sure the question and choices are natural Thai).
+      Create ${count} multiple-choice question(s) for Thai Elementary Grade 2 students.
+      Subject: Thai Language (ภาษาไทย ป.2)
+      Category: ${subject}
+      Topic Details: ${topic}
       
       Requirements:
+      - Language: Thai (Simple, natural, appropriate for 7-8 year old kids).
       - Return an array of objects.
       - Each object must have 4 choices (c1, c2, c3, c4).
       - Indicate the correct choice number (1, 2, 3, or 4).
-      - Provide a short explanation for the correct answer.
-      - If the question is about a visual object (e.g., shapes, animals, fruits) or would benefit from an illustration, provide a concise English description in the 'image_description' field. If no image is needed (e.g., math calculation, grammar), leave it empty or string "none".
+      - Provide a short explanation for the correct answer in Thai.
+      - If the question is about a visual object (e.g., animal names, objects matching spelling), provide a concise English description in the 'image_description' field.
     `;
 
     const response = await ai.models.generateContent({
@@ -59,13 +59,13 @@ export const generateQuestionWithAI = async (
           items: {
             type: Type.OBJECT,
             properties: {
-              text: { type: Type.STRING, description: "The question text" },
+              text: { type: Type.STRING, description: "The question text in Thai" },
               c1: { type: Type.STRING, description: "Choice 1" },
               c2: { type: Type.STRING, description: "Choice 2" },
               c3: { type: Type.STRING, description: "Choice 3" },
               c4: { type: Type.STRING, description: "Choice 4" },
               correct: { type: Type.STRING, description: "The correct choice number '1', '2', '3', or '4'" },
-              explanation: { type: Type.STRING, description: "Explanation of the answer" },
+              explanation: { type: Type.STRING, description: "Explanation in Thai" },
               image_description: { type: Type.STRING, description: "Visual description in English for image generation (or 'none')" }
             },
             required: ["text", "c1", "c2", "c3", "c4", "correct", "explanation"],
@@ -78,7 +78,6 @@ export const generateQuestionWithAI = async (
       const data = JSON.parse(response.text);
       const rawArray = Array.isArray(data) ? data : [data];
       
-      // Map and Generate Image URL
       return rawArray.map((item: any) => ({
         text: item.text,
         c1: item.c1,

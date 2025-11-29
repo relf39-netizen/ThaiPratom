@@ -8,7 +8,7 @@ import { fetchAppData } from '../services/api';
 interface GameSetupProps {
   teacher: Teacher; 
   onBack: () => void;
-  onGameCreated: (roomCode: string) => void; // ✅ Callback with roomCode
+  onGameCreated: (roomCode: string) => void;
 }
 
 const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated }) => {
@@ -19,12 +19,8 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
   const [selectedSubject, setSelectedSubject] = useState<string>('MIXED'); 
   const [questionCount, setQuestionCount] = useState<number>(10);
   const [timePerQuestion, setTimePerQuestion] = useState<number>(20);
-  const [selectedGrade, setSelectedGrade] = useState<string>('P6');
-
-  const GRADE_LABELS: Record<string, string> = {
-      'P1': 'ป.1', 'P2': 'ป.2', 'P3': 'ป.3',
-      'P4': 'ป.4', 'P5': 'ป.5', 'P6': 'ป.6'
-  };
+  // Default to P2
+  const selectedGrade = 'P2';
 
   useEffect(() => {
     const loadQuestions = async () => {
@@ -36,14 +32,13 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
   }, []);
 
   const generateRoomCode = () => {
-      // สุ่มเลข 6 หลัก (100000 - 999999)
       return Math.floor(100000 + Math.random() * 900000).toString();
   };
 
   const handleCreateGame = async () => {
     setLoading(true);
 
-    // ✅ กรองข้อสอบเฉพาะของโรงเรียนตัวเอง + ส่วนกลาง
+    // ✅ กรองข้อสอบ: P2 หรือ ALL + โรงเรียนตัวเอง หรือ ส่วนกลาง
     let filtered = allQuestions.filter(q => 
         (q.grade === selectedGrade || q.grade === 'ALL') &&
         (q.school === teacher.school || q.school === 'CENTER' || q.school === 'Admin')
@@ -61,12 +56,12 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
     const finalQuestions = filtered.slice(0, questionCount);
 
     if (finalQuestions.length === 0) {
-        alert(`ไม่พบข้อสอบสำหรับชั้น ${GRADE_LABELS[selectedGrade]} ในหมวดนี้ (โรงเรียน ${teacher.school} + ส่วนกลาง)`);
+        alert(`ไม่พบข้อสอบสำหรับ ป.2 ในหมวดนี้`);
         setLoading(false);
         return;
     }
 
-    // ✅ REPAIR DATA
+    // ✅ REPAIR DATA (Same logic as before)
     const sanitizedQuestions = finalQuestions.map((q, idx) => {
         const choices = q.choices.map((c, cIdx) => ({
             id: String(c.id && c.id.length > 0 ? c.id : `choice_${idx}_${cIdx+1}`).trim(),
@@ -120,7 +115,6 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
     });
 
     try {
-        // ✅ สร้างรหัสห้องแบบสุ่ม
         const roomCode = generateRoomCode();
         const roomPath = `games/${roomCode}`;
         
@@ -130,15 +124,15 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
             status: 'LOBBY',
             currentQuestionIndex: 0,
             totalQuestions: sanitizedQuestions.length,
-            subject: selectedSubject === 'MIXED' ? 'รวมวิชา' : selectedSubject,
-            grade: selectedGrade,
+            subject: selectedSubject === 'MIXED' ? 'รวมทุกเรื่อง' : selectedSubject,
+            grade: 'ป.2',
             timePerQuestion: timePerQuestion,
             timer: timePerQuestion,
-            schoolId: teacher.school, // ✅ บันทึกชื่อโรงเรียนเจ้าของห้อง
+            schoolId: teacher.school,
             teacherName: teacher.name
         });
         
-        onGameCreated(roomCode); // ส่งรหัสห้องกลับไป
+        onGameCreated(roomCode);
     } catch (e) {
         alert("Firebase Error: " + e);
     } finally {
@@ -158,32 +152,20 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
                 <Layers className="text-purple-600" /> ตั้งค่าเกมการแข่งขัน
             </h2>
             <div className="text-sm text-gray-500 mt-2 bg-purple-50 inline-block px-3 py-1 rounded-full border border-purple-100">
-                โรงเรียน: {teacher.school}
+                ภาษาไทย ป.2
             </div>
         </div>
 
-        {/* 0. เลือกระดับชั้น */}
+        {/* 1. เลือกเรื่อง */}
         <div className="mb-6">
-            <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><GraduationCap size={18}/> 0. เลือกระดับชั้น</label>
-            <div className="grid grid-cols-3 gap-2">
-                {['P1','P2','P3','P4','P5','P6'].map(g => (
-                    <button key={g} onClick={() => setSelectedGrade(g)} className={`py-2 rounded-lg border-2 font-bold transition ${selectedGrade === g ? 'border-purple-500 bg-purple-100 text-purple-800 shadow-sm' : 'border-gray-100 hover:bg-gray-50'}`}>
-                        {GRADE_LABELS[g]}
-                    </button>
-                ))}
-            </div>
-        </div>
-
-        {/* 1. เลือกวิชา */}
-        <div className="mb-6">
-            <label className="block text-sm font-bold text-gray-700 mb-2">1. เลือกวิชา</label>
+            <label className="block text-sm font-bold text-gray-700 mb-2">1. เลือกเรื่องที่แข่ง</label>
             <div className="grid grid-cols-2 gap-2">
                 <button 
                     onClick={() => setSelectedSubject('MIXED')}
                     className={`p-3 rounded-xl border-2 transition flex flex-col items-center ${selectedSubject === 'MIXED' ? 'border-purple-500 bg-purple-100 text-purple-800' : 'border-gray-200'}`}
                 >
                     <Shuffle size={20} className="mb-1"/>
-                    <span className="font-bold text-sm">คละทุกวิชา</span>
+                    <span className="font-bold text-sm">คละทุกเรื่อง</span>
                 </button>
                 {Object.values(Subject).map((sub: any) => (
                      <button 

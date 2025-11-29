@@ -5,9 +5,9 @@ import { Student, Question, Teacher, Subject, ExamResult, Assignment } from '../
 import { MOCK_STUDENTS, MOCK_QUESTIONS } from '../constants';
 
 // ---------------------------------------------------------------------------
-// 🟢 Web App URL
+// 🟢 Web App URL (Updated)
 // ---------------------------------------------------------------------------
-export const GOOGLE_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbxuK3FqdTahB8trhbMoD3MbkfvKO774Uxq1D32s3vvjmDxT4IMOfaprncIvD89zbTDj/exec'; 
+export const GOOGLE_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbx_ZjUutJLBsaayyPQLlV2UtwPFRiJaVjXaK5w2yMMt7sJ4e6TxS8HuXjUxRxI_WKtD/exec'; 
 
 export interface AppData {
   students: Student[];
@@ -22,23 +22,27 @@ const getUrl = (params: string) => {
   return `${GOOGLE_SCRIPT_URL}${params}${separator}_t=${Date.now()}`;
 };
 
-// 🔄 Helper: Normalize Subject
+// 🔄 Helper: Normalize Subject (Map Text from Sheet/API to Enum)
 const normalizeSubject = (rawSubject: string): Subject => {
-  const s = String(rawSubject).trim().toUpperCase();
-  if (s === 'MATH' || s === 'คณิตศาสตร์' || s === 'คณิต') return Subject.MATH;
-  if (s === 'THAI' || s === 'ภาษาไทย' || s === 'ไทย') return Subject.THAI;
-  if (s === 'SCIENCE' || s === 'วิทยาศาสตร์' || s === 'วิทย์') return Subject.SCIENCE;
-  if (s === 'ENGLISH' || s === 'ภาษาอังกฤษ' || s === 'อังกฤษ') return Subject.ENGLISH;
-  return Subject.MATH; 
+  const s = String(rawSubject).trim();
+  // Check exact matches or keywords
+  if (s.includes('สะกด') || s === 'SPELLING') return Subject.SPELLING;
+  if (s.includes('วรรณยุกต์') || s === 'TONES') return Subject.TONES;
+  if (s.includes('ควบกล้ำ') || s === 'CLUSTERS') return Subject.CLUSTERS;
+  if (s.includes('รร') || s === 'ROHAN') return Subject.ROHAN;
+  if (s.includes('คล้องจอง') || s === 'RHYMES') return Subject.RHYMES;
+  
+  return Subject.SPELLING; // Default
 };
 
-// 🔄 Helper: Convert Subject to Code
+// 🔄 Helper: Convert Subject to Code (For sending to backend)
 const convertToCode = (subjectEnum: Subject): string => {
-    if (subjectEnum === Subject.MATH) return 'MATH';
-    if (subjectEnum === Subject.THAI) return 'THAI';
-    if (subjectEnum === Subject.SCIENCE) return 'SCIENCE';
-    if (subjectEnum === Subject.ENGLISH) return 'ENGLISH';
-    return 'MATH';
+    if (subjectEnum === Subject.SPELLING) return 'SPELLING';
+    if (subjectEnum === Subject.TONES) return 'TONES';
+    if (subjectEnum === Subject.CLUSTERS) return 'CLUSTERS';
+    if (subjectEnum === Subject.ROHAN) return 'ROHAN';
+    if (subjectEnum === Subject.RHYMES) return 'RHYMES';
+    return 'SPELLING';
 };
 
 // ✅ Teacher Login
@@ -128,8 +132,8 @@ export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', i
   }
 };
 
-// ✅ Add New Student (Legacy Wrapper)
-export const addStudent = async (name: string, school: string, avatar: string, grade: string = 'P6', teacherId?: string): Promise<Student | null> => {
+// ✅ Add New Student (Legacy Wrapper) - Default to P2
+export const addStudent = async (name: string, school: string, avatar: string, grade: string = 'P2', teacherId?: string): Promise<Student | null> => {
   const result = await manageStudent({ action: 'add', name, school, avatar, grade, teacherId });
   if (result.success && result.student) {
       return result.student;
@@ -174,7 +178,7 @@ export const getTeacherDashboard = async (school: string) => {
       id: String(a.id),
       school: String(a.school),
       subject: normalizeSubject(a.subject),
-      grade: a.grade || 'ALL', // ✅ Read grade from response
+      grade: a.grade || 'ALL', 
       questionCount: Number(a.questionCount),
       deadline: String(a.deadline).split('T')[0],
       createdBy: String(a.createdBy)
@@ -199,7 +203,7 @@ export const addQuestion = async (question: any): Promise<boolean> => {
       c1: question.c1, c2: question.c2, c3: question.c3, c4: question.c4,
       correct: question.correct,
       explanation: question.explanation,
-      grade: question.grade,
+      grade: 'P2', // Force P2
       school: question.school || '',
       teacherId: question.teacherId || ''
     });
@@ -210,13 +214,13 @@ export const addQuestion = async (question: any): Promise<boolean> => {
   }
 };
 
-// ✅ Edit Question (New!)
+// ✅ Edit Question
 export const editQuestion = async (question: any): Promise<boolean> => {
   if (!GOOGLE_SCRIPT_URL) return false;
   try {
     const subjectCode = convertToCode(question.subject);
     const params = new URLSearchParams({
-      type: 'edit_question', // Make sure to handle this in GAS
+      type: 'edit_question',
       id: question.id,
       subject: subjectCode,
       text: question.text,
@@ -224,7 +228,7 @@ export const editQuestion = async (question: any): Promise<boolean> => {
       c1: question.c1, c2: question.c2, c3: question.c3, c4: question.c4,
       correct: question.correct,
       explanation: question.explanation,
-      grade: question.grade
+      grade: 'P2' // Force P2
     });
     const response = await fetch(getUrl(`?${params.toString()}`));
     const result = await response.json();
@@ -243,7 +247,6 @@ export const deleteQuestion = async (id: string): Promise<boolean> => {
         const result = await response.json();
         return result.success !== false;
     } catch {
-        // If not JSON (e.g. text 'Success'), treat as success if status is 200
         return response.ok;
     }
   } catch (e) {
@@ -251,7 +254,7 @@ export const deleteQuestion = async (id: string): Promise<boolean> => {
   }
 };
 
-// ✅ Add Assignment (Updated with Grade)
+// ✅ Add Assignment
 export const addAssignment = async (school: string, subject: string, grade: string, questionCount: number, deadline: string, createdBy: string): Promise<boolean> => {
   if (!GOOGLE_SCRIPT_URL) return false;
   try {
@@ -259,7 +262,7 @@ export const addAssignment = async (school: string, subject: string, grade: stri
         type: 'add_assignment',
         school,
         subject,
-        grade, // ✅ Send Grade
+        grade: 'P2', // Force P2
         questionCount: String(questionCount),
         deadline,
         createdBy
@@ -271,13 +274,11 @@ export const addAssignment = async (school: string, subject: string, grade: stri
   }
 };
 
-// ✅ Delete Assignment (Improved Robustness)
+// ✅ Delete Assignment
 export const deleteAssignment = async (id: string): Promise<boolean> => {
   if (!GOOGLE_SCRIPT_URL) return false;
   try {
     const response = await fetch(getUrl(`?type=delete_assignment&id=${encodeURIComponent(id)}`));
-    
-    // Try to parse JSON. If it fails but request was OK, assume success (likely returned simple text).
     const text = await response.text();
     try {
         const result = JSON.parse(text);
@@ -316,7 +317,7 @@ export const fetchAppData = async (): Promise<AppData> => {
     const data = JSON.parse(textData);
     
     const cleanStudents = (data.students || []).map((s: any) => ({
-      ...s, id: String(s.id).trim(), stars: Number(s.stars) || 0, grade: s.grade || 'P6',
+      ...s, id: String(s.id).trim(), stars: Number(s.stars) || 0, grade: s.grade || 'P2',
       teacherId: s.teacherId ? String(s.teacherId) : undefined
     }));
     
@@ -350,7 +351,7 @@ export const fetchAppData = async (): Promise<AppData> => {
       id: String(a.id), 
       school: String(a.school), 
       subject: normalizeSubject(a.subject),
-      grade: a.grade || 'ALL', // ✅ Read grade
+      grade: a.grade || 'ALL', 
       questionCount: Number(a.questionCount), 
       deadline: String(a.deadline).split('T')[0], 
       createdBy: String(a.createdBy)

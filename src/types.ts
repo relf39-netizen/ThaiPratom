@@ -6,24 +6,26 @@ export interface Student {
   avatar: string; 
   stars: number; 
   grade?: string; 
-  teacherId?: string; // ✅ ระบุ ID ครูผู้ดูแล
+  teacherId?: string; 
 }
 
 export interface Teacher {
-  id?: string | number; // ✅ รองรับทั้ง String และ Number สำหรับ ID
+  id?: string | number; 
   username?: string;
   password?: string;
   name: string;
   school: string;
-  role?: string; // ADMIN or TEACHER
+  role?: string; 
   gradeLevel?: string; 
 }
 
+// ✅ เปลี่ยนเป็นหัวข้อภาษาไทย ป.2
 export enum Subject {
-  MATH = 'คณิตศาสตร์',
-  THAI = 'ภาษาไทย',
-  SCIENCE = 'วิทยาศาสตร์',
-  ENGLISH = 'ภาษาอังกฤษ'
+  SPELLING = 'มาตราตัวสะกด',
+  TONES = 'การผันวรรณยุกต์',
+  CLUSTERS = 'คำควบกล้ำ',
+  ROHAN = 'คำที่มี รร',
+  RHYMES = 'คำคล้องจอง'
 }
 
 export interface Question {
@@ -40,7 +42,7 @@ export interface Question {
   explanation: string;
   grade?: string; 
   school?: string; 
-  teacherId?: string; // ✅ เพิ่ม ID ครูเจ้าของข้อสอบ
+  teacherId?: string; 
 }
 
 export interface ExamResult {
@@ -57,7 +59,7 @@ export interface Assignment {
   id: string;
   school: string;
   subject: Subject;
-  grade?: string; // ✅ เพิ่มระดับชั้น
+  grade?: string; 
   questionCount: number;
   deadline: string; 
   createdBy: string;

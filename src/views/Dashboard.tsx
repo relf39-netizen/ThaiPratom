@@ -1,7 +1,6 @@
-
 import React, { useState } from 'react';
-import { BookOpen, Gamepad2, BarChart3, Star, Calendar, CheckCircle, AlertCircle, History, ArrowLeft, Clock } from 'lucide-react';
-import { Student, Assignment, ExamResult } from '../types';
+import { BookOpen, Gamepad2, BarChart3, Star, Calendar, CheckCircle, AlertCircle, History, ArrowLeft, Clock, Puzzle, Music, Users, Trees, Link as LinkIcon } from 'lucide-react';
+import { Student, Assignment, ExamResult, Subject } from '../types';
 
 interface DashboardProps {
   student: Student;
@@ -9,11 +8,56 @@ interface DashboardProps {
   examResults?: ExamResult[]; 
   onNavigate: (page: string) => void;
   onStartAssignment?: (assignment: Assignment) => void;
+  onSelectSubject: (subject: Subject) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examResults = [], onNavigate, onStartAssignment }) => {
+const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examResults = [], onNavigate, onStartAssignment, onSelectSubject }) => {
   // state สำหรับสลับหน้าระหว่าง 'main' (หน้าหลัก) กับ 'history' (ประวัติ)
   const [view, setView] = useState<'main' | 'history'>('main');
+
+  // Subjects Data for Grade 2
+  const subjects = [
+    { 
+      id: Subject.SPELLING, 
+      name: 'มาตราตัวสะกด', 
+      icon: <Puzzle size={40} />, 
+      color: 'bg-red-50 hover:bg-red-100 border-red-200 text-red-600',
+      shadow: 'shadow-red-100',
+      desc: 'แม่ ก กา และ 8 มาตรา'
+    },
+    { 
+      id: Subject.TONES, 
+      name: 'การผันวรรณยุกต์', 
+      icon: <Music size={40} />, 
+      color: 'bg-yellow-50 hover:bg-yellow-100 border-yellow-200 text-yellow-600',
+      shadow: 'shadow-yellow-100',
+      desc: 'สามัญ เอก โท ตรี จัตวา'
+    },
+    { 
+      id: Subject.CLUSTERS, 
+      name: 'คำควบกล้ำ', 
+      icon: <Users size={40} />, 
+      color: 'bg-green-50 hover:bg-green-100 border-green-200 text-green-600',
+      shadow: 'shadow-green-100',
+      desc: 'ร ล ว ควบแท้/ไม่แท้'
+    },
+    { 
+      id: Subject.ROHAN, 
+      name: 'คำที่มี รร', 
+      icon: <Trees size={40} />, 
+      color: 'bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-600',
+      shadow: 'shadow-blue-100',
+      desc: 'อ่านคำที่ใช้ ร หัน (รร)'
+    },
+    { 
+      id: Subject.RHYMES, 
+      name: 'คำคล้องจอง', 
+      icon: <LinkIcon size={40} />, 
+      color: 'bg-purple-50 hover:bg-purple-100 border-purple-200 text-purple-600',
+      shadow: 'shadow-purple-100',
+      desc: 'สระและตัวสะกดเดียวกัน'
+    }
+  ];
 
   // กรองข้อมูล (โรงเรียนตรงกัน + ระดับชั้นตรงกัน)
   const myAssignments = assignments.filter(a => {
@@ -111,57 +155,66 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
   return (
     <div className="space-y-6 pb-20">
       {/* Welcome Banner */}
-      <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-3xl p-6 text-white shadow-lg relative overflow-hidden">
-        <div className="absolute top-0 right-0 opacity-10 transform translate-x-10 -translate-y-10"><Star size={150} /></div>
-        <div className="relative z-10 flex items-center gap-4">
-          <div className="text-5xl bg-white/20 p-3 rounded-full backdrop-blur-sm shadow-inner">{student.avatar}</div>
-          <div>
-            <h2 className="text-2xl font-bold mb-1">สวัสดี, {student.name.split(' ')[0]}!</h2>
-            <div className="flex gap-2 text-blue-100 items-center">
-                <span>ชั้น {GRADE_LABELS[student.grade || 'P6'] || student.grade}</span>
+      <div className="bg-gradient-to-r from-pink-400 via-red-400 to-orange-400 rounded-[32px] p-6 text-white shadow-xl relative overflow-hidden border-b-8 border-orange-600/20">
+        <div className="absolute top-0 right-0 opacity-10 transform translate-x-10 -translate-y-10 animate-pulse"><Star size={150} /></div>
+        <div className="absolute bottom-0 right-20 opacity-20 transform translate-y-10"><Puzzle size={100} /></div>
+        
+        <div className="relative z-10 flex flex-col md:flex-row items-center gap-6">
+          <div className="text-6xl bg-white p-3 rounded-full shadow-lg border-4 border-yellow-300 transform hover:scale-110 transition duration-300 cursor-pointer">
+             {student.avatar}
+          </div>
+          <div className="text-center md:text-left">
+            <h2 className="text-3xl font-black mb-1 font-fun drop-shadow-md">สวัสดีจ้ะ, {student.name.split(' ')[0]}!</h2>
+            <div className="flex justify-center md:justify-start gap-2 text-white/90 items-center font-bold text-sm mb-3">
+                <span className="bg-black/10 px-2 py-0.5 rounded-lg">ชั้น {GRADE_LABELS[student.grade || 'P2'] || student.grade}</span>
                 <span>•</span>
                 <span>{student.school || 'โรงเรียนคุณภาพ'}</span>
             </div>
-            <div className="flex items-center gap-2 mt-2 bg-black/20 w-fit px-3 py-1 rounded-full"><Star className="text-yellow-300 fill-yellow-300" size={16} /><span className="font-bold">{student.stars} คะแนนสะสม</span></div>
+            <div className="flex items-center gap-2 bg-white/20 w-fit px-4 py-1.5 rounded-full mx-auto md:mx-0 backdrop-blur-sm border border-white/30 hover:bg-white/30 transition">
+                <Star className="text-yellow-300 fill-yellow-300 drop-shadow" size={20} />
+                <span className="font-bold text-lg">{student.stars}</span>
+                <span className="text-sm opacity-90">คะแนนสะสม</span>
+            </div>
           </div>
         </div>
       </div>
 
       {/* 📝 กล่องการบ้านที่ต้องทำ (Pending) */}
       {pendingAssignments.length > 0 ? (
-        <div className="bg-white border-l-4 border-orange-500 rounded-2xl p-6 shadow-md animate-fade-in">
+        <div className="bg-white border-4 border-orange-100 rounded-3xl p-6 shadow-sm animate-fade-in relative overflow-hidden">
+            <div className="absolute top-0 right-0 bg-orange-100 px-4 py-1 rounded-bl-2xl text-orange-600 font-bold text-xs">งานด่วน!</div>
             <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <div className="bg-orange-100 p-2 rounded-lg text-orange-600"><Calendar size={20} /></div>
-                การบ้านที่ต้องทำ ({pendingAssignments.length})
+                <div className="bg-orange-100 p-2 rounded-xl text-orange-600"><Calendar size={24} /></div>
+                การบ้านของหนู ({pendingAssignments.length})
             </h3>
             <div className="space-y-3">
                 {pendingAssignments.map(hw => {
                     const isExpired = new Date(hw.deadline) < new Date();
                     return (
-                        <div key={hw.id} className={`p-4 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center border gap-3 ${isExpired ? 'bg-red-50 border-red-100' : 'bg-orange-50 border-orange-100'}`}>
+                        <div key={hw.id} className={`p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center border-2 gap-3 transition hover:shadow-md ${isExpired ? 'bg-red-50 border-red-100' : 'bg-orange-50/50 border-orange-100 hover:bg-orange-50'}`}>
                             <div>
                                 <div className="font-bold text-gray-800 text-lg flex items-center gap-2">
                                   {hw.subject} 
-                                  {isExpired && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full border border-red-200">เลยกำหนด</span>}
-                                  {hw.grade && hw.grade !== 'ALL' && <span className="text-[10px] bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full border border-purple-200">{GRADE_LABELS[hw.grade] || hw.grade}</span>}
+                                  {isExpired && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full border border-red-200 font-bold">เลยกำหนด</span>}
+                                  {hw.grade && hw.grade !== 'ALL' && <span className="text-[10px] bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full border border-purple-200 font-bold">{GRADE_LABELS[hw.grade] || hw.grade}</span>}
                                 </div>
-                                <div className={`text-sm ${isExpired ? 'text-red-500 font-medium' : 'text-gray-600'}`}>
-                                  จำนวน {hw.questionCount} ข้อ • ส่งภายใน {formatDate(hw.deadline)}
+                                <div className={`text-sm ${isExpired ? 'text-red-500 font-medium' : 'text-gray-500'}`}>
+                                  มี {hw.questionCount} ข้อ • ส่งภายใน {formatDate(hw.deadline)}
                                 </div>
                                 {hw.createdBy && (
-                                   <div className="text-xs text-purple-600 mt-1 font-medium bg-purple-50 px-2 py-0.5 rounded w-fit">
-                                      มอบหมายโดย: ครู{hw.createdBy}
+                                   <div className="text-xs text-purple-500 mt-1 font-bold bg-purple-50 px-2 py-0.5 rounded w-fit">
+                                      ครู{hw.createdBy} สั่งมา
                                    </div>
                                 )}
                             </div>
                             <button 
                                 onClick={() => onStartAssignment && onStartAssignment(hw)}
-                                className={`w-full sm:w-auto px-6 py-2 rounded-xl font-bold text-sm shadow-md transition-all hover:-translate-y-1 active:scale-95
+                                className={`w-full sm:w-auto px-6 py-3 rounded-xl font-bold text-sm shadow-md transition-all hover:-translate-y-1 active:scale-95 border-b-4
                                   ${isExpired 
-                                    ? 'bg-red-500 text-white hover:bg-red-600 shadow-red-200' 
-                                    : 'bg-orange-500 text-white hover:bg-orange-600 shadow-orange-200'}`}
+                                    ? 'bg-red-500 text-white hover:bg-red-600 border-red-700 active:border-b-0' 
+                                    : 'bg-orange-400 text-white hover:bg-orange-500 border-orange-600 active:border-b-0'}`}
                             >
-                                {isExpired ? 'ส่งงานล่าช้า' : 'เริ่มทำ'}
+                                {isExpired ? 'ส่งงานล่าช้า' : 'เริ่มทำเลย'}
                             </button>
                         </div>
                     );
@@ -169,41 +222,72 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
             </div>
         </div>
       ) : (
-        <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center justify-center gap-2 text-green-700">
-           <CheckCircle size={20} /> เยี่ยมมาก! คุณไม่มีการบ้านค้าง
+        <div className="bg-green-100 border-2 border-green-200 rounded-3xl p-5 flex flex-col items-center justify-center gap-2 text-green-700 text-center shadow-sm">
+           <div className="bg-white p-2 rounded-full"><CheckCircle size={32} className="text-green-500"/></div>
+           <span className="font-bold text-lg">เยี่ยมมาก! หนูทำการบ้านครบแล้ว</span>
         </div>
       )}
 
-      {/* Grid เมนูหลัก */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        
-        {/* ปุ่มฝึกทำข้อสอบ */}
-        <button onClick={() => onNavigate('select-subject')} className="group relative bg-white rounded-3xl p-6 shadow-md hover:shadow-xl transition-all border-b-4 border-blue-100 hover:border-blue-500 hover:-translate-y-1 text-left">
-          <div className="bg-blue-100 w-14 h-14 rounded-2xl flex items-center justify-center text-blue-600 mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors"><BookOpen size={32} /></div>
-          <h3 className="text-xl font-bold text-gray-800 mb-2">ฝึกทำข้อสอบ</h3>
-          <p className="text-gray-500 text-sm">ฝึกฝนวิชาคณิตศาสตร์ ภาษาไทย วิทยาศาสตร์ และภาษาอังกฤษ</p>
-        </button>
-
-        {/* ปุ่มเกมแข่งขัน */}
-        <button onClick={() => onNavigate('game')} className="group relative bg-white rounded-3xl p-6 shadow-md hover:shadow-xl transition-all border-b-4 border-purple-100 hover:border-purple-500 hover:-translate-y-1 text-left">
-          <div className="bg-purple-100 w-14 h-14 rounded-2xl flex items-center justify-center text-purple-600 mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors"><Gamepad2 size={32} /></div>
-          <h3 className="text-xl font-bold text-gray-800 mb-2">เกมแข่งขัน</h3>
-          <p className="text-gray-500 text-sm">ประลองความเร็วกับเพื่อนๆ ในห้อง แบบเรียลไทม์</p>
-          <div className="absolute top-6 right-6 flex gap-1"><span className="flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span><span className="text-green-600 text-xs font-bold">LIVE</span></div>
-        </button>
-
-        {/* ปุ่มดูประวัติการส่งงาน (ใหม่) */}
-        <button onClick={() => setView('history')} className="group bg-white rounded-3xl p-6 shadow-md hover:shadow-xl transition-all border-b-4 border-yellow-100 hover:border-yellow-500 hover:-translate-y-1 flex items-center gap-4">
-          <div className="bg-yellow-100 w-12 h-12 rounded-2xl flex items-center justify-center text-yellow-600 group-hover:bg-yellow-600 group-hover:text-white transition-colors"><History size={24} /></div>
-          <div><h3 className="text-lg font-bold text-gray-800">ประวัติการส่งงาน</h3><p className="text-gray-500 text-sm">ดูรายการการบ้านที่ทำเสร็จแล้ว ({finishedAssignments.length})</p></div>
-        </button>
-
-        {/* ปุ่มดูสถิติ */}
-        <button onClick={() => onNavigate('stats')} className="group bg-white rounded-3xl p-6 shadow-md hover:shadow-xl transition-all border-b-4 border-green-100 hover:border-green-500 hover:-translate-y-1 flex items-center gap-4">
-          <div className="bg-green-100 w-12 h-12 rounded-2xl flex items-center justify-center text-green-600 group-hover:bg-green-600 group-hover:text-white transition-colors"><BarChart3 size={24} /></div>
-          <div><h3 className="text-lg font-bold text-gray-800">ดูสถิติผลการเรียน</h3><p className="text-gray-500 text-sm">เช็คพัฒนาการและจุดที่ต้องปรับปรุง</p></div>
-        </button>
+      {/* 📚 Section: Practice Topics (Main Menu) */}
+      <div>
+        <h3 className="text-xl font-black text-gray-800 mb-4 flex items-center gap-2 font-fun ml-2">
+           <BookOpen className="text-blue-500 fill-blue-500" /> บทเรียนน่ารู้ (ฝึกฝน)
+        </h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            {subjects.map((sub) => (
+              <button
+                key={sub.name}
+                onClick={() => onSelectSubject(sub.id)}
+                className={`group relative p-4 md:p-6 rounded-[24px] border-b-8 transition-all duration-300 transform hover:-translate-y-1 active:translate-y-1 active:border-b-0 flex flex-col items-center gap-3 text-center ${sub.color} ${sub.shadow} bg-white`}
+              >
+                <div className="bg-white/80 p-3 rounded-full shadow-sm group-hover:scale-110 transition-transform group-hover:rotate-6">
+                  {sub.icon}
+                </div>
+                <div>
+                  <h3 className="text-base md:text-lg font-bold leading-tight">{sub.name}</h3>
+                  <p className="text-[10px] md:text-xs opacity-70 mt-1 font-medium hidden md:block">{sub.desc}</p>
+                </div>
+              </button>
+            ))}
+        </div>
       </div>
+
+      {/* 🎮 Section: Other Activities */}
+      <div>
+        <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2 font-fun ml-2">
+            <Gamepad2 className="text-purple-500 fill-purple-500"/> สนุกกับกิจกรรม
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* ปุ่มเกมแข่งขัน */}
+            <button onClick={() => onNavigate('game')} className="group relative bg-white rounded-[24px] p-5 shadow-sm hover:shadow-lg transition-all border-b-8 border-purple-200 hover:border-purple-400 active:border-b-0 active:translate-y-2 flex items-center gap-4">
+              <div className="bg-purple-100 w-14 h-14 rounded-2xl flex items-center justify-center text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors"><Gamepad2 size={32} /></div>
+              <div className="text-left flex-1">
+                  <h3 className="text-lg font-bold text-gray-800 group-hover:text-purple-600 transition-colors">เกมแข่งขัน</h3>
+                  <p className="text-gray-400 text-xs group-hover:text-purple-400">แข่งตอบคำถามกับเพื่อน</p>
+              </div>
+              <div className="absolute top-4 right-4 flex gap-1"><span className="flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span><span className="text-green-600 text-[10px] font-bold">LIVE</span></div>
+            </button>
+
+            {/* ปุ่มดูประวัติการส่งงาน */}
+            <button onClick={() => setView('history')} className="group bg-white rounded-[24px] p-5 shadow-sm hover:shadow-lg transition-all border-b-8 border-yellow-200 hover:border-yellow-400 active:border-b-0 active:translate-y-2 flex items-center gap-4">
+              <div className="bg-yellow-100 w-14 h-14 rounded-2xl flex items-center justify-center text-yellow-600 group-hover:bg-yellow-500 group-hover:text-white transition-colors"><History size={28} /></div>
+              <div className="text-left">
+                  <h3 className="text-lg font-bold text-gray-800 group-hover:text-yellow-600 transition-colors">ประวัติส่งงาน</h3>
+                  <p className="text-gray-400 text-xs group-hover:text-yellow-500">งานที่ทำเสร็จแล้ว ({finishedAssignments.length})</p>
+              </div>
+            </button>
+
+            {/* ปุ่มดูสถิติ */}
+            <button onClick={() => onNavigate('stats')} className="group bg-white rounded-[24px] p-5 shadow-sm hover:shadow-lg transition-all border-b-8 border-green-200 hover:border-green-400 active:border-b-0 active:translate-y-2 flex items-center gap-4">
+              <div className="bg-green-100 w-14 h-14 rounded-2xl flex items-center justify-center text-green-600 group-hover:bg-green-500 group-hover:text-white transition-colors"><BarChart3 size={28} /></div>
+              <div className="text-left">
+                  <h3 className="text-lg font-bold text-gray-800 group-hover:text-green-600 transition-colors">ผลการเรียน</h3>
+                  <p className="text-gray-400 text-xs group-hover:text-green-500">เช็คดาวและคะแนน</p>
+              </div>
+            </button>
+        </div>
+      </div>
+
     </div>
   );
 };
