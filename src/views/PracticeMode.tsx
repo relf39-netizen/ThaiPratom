@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Question, Subject } from '../types';
-import { CheckCircle, XCircle, ArrowRight, RefreshCw, ArrowLeft } from 'lucide-react';
+import { CheckCircle, XCircle, ArrowRight, RefreshCw, ArrowLeft, Volume2 } from 'lucide-react';
 import { speak } from '../utils/soundUtils';
 
 interface PracticeModeProps {
@@ -18,7 +18,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
   const [score, setScore] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  const choiceLabels = ['A', 'B', 'C', 'D']; // ป้ายกำกับตัวเลือก
+  const choiceLabels = ['A', 'B', 'C', 'D']; 
 
   useEffect(() => {
     // กระบวนการเตรียมข้อสอบ: สุ่มโจทย์ + ตัดเหลือ 10 ข้อ + สลับช้อยส์
@@ -38,7 +38,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
         setQuestions(finalQuestions);
         setLoading(false);
     } else {
-        setLoading(false); // กรณีไม่มีคำถามเลย
+        setLoading(false); 
     }
   }, [allQuestions]);
 
@@ -69,7 +69,6 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
       setSelectedChoice(null);
       setIsSubmitted(false);
     } else {
-      // ✅ แก้ไข: ส่ง score ล่าสุดไปเลย ไม่ต้องบวกเพิ่มอีก (เพราะบวกไปแล้วตอน handleSubmit)
       onFinish(score, questions.length);
     }
   };
@@ -87,7 +86,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
     );
   }
 
-  // ชุดสีสำหรับปุ่มตัวเลือก (ฟ้า, เขียว, ส้ม, ชมพู)
+  // ชุดสีสำหรับปุ่มตัวเลือก
   const choiceColors = [
     { 
       base: 'bg-sky-50 border-sky-200 text-sky-800', 
@@ -112,7 +111,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
   ];
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-3xl mx-auto pb-20">
       {/* Progress Header */}
       <div className="flex items-center justify-between mb-6">
         <button onClick={onBack} className="text-gray-500 hover:text-gray-700 flex items-center gap-1">
@@ -130,24 +129,24 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
       </div>
 
       {/* Question Card */}
-      <div className="bg-white rounded-3xl shadow-lg p-6 md:p-8 mb-6 border-b-4 border-gray-200">
-        <div className="inline-block bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded mb-3">
+      <div className="bg-white rounded-3xl shadow-lg p-6 md:p-8 mb-6 border-b-4 border-gray-200 relative overflow-hidden">
+        <div className="inline-block bg-blue-100 text-blue-700 text-xs font-bold px-3 py-1 rounded-full mb-3">
           {currentQuestion.subject}
         </div>
         
-        <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-4 leading-relaxed">
+        <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-4 leading-relaxed font-fun">
           {currentQuestion.text}
         </h2>
 
         {currentQuestion.image && (
-          <div className="mb-6 rounded-xl overflow-hidden border-2 border-gray-100">
+          <div className="mb-6 rounded-2xl overflow-hidden border-2 border-gray-100">
             <img src={currentQuestion.image} alt="Question" className="w-full h-auto object-contain max-h-60 bg-gray-50" />
           </div>
         )}
 
         <div className="space-y-4">
           {currentQuestion.choices.map((choice, index) => {
-            const colorTheme = choiceColors[index % 4]; // วนสีตามลำดับ
+            const colorTheme = choiceColors[index % 4];
             const label = choiceLabels[index] || (index + 1).toString();
             
             let buttonStyle = `border-2 shadow-sm transition-all duration-200 relative flex items-center gap-4 ${colorTheme.base} ${colorTheme.hover}`;
@@ -176,7 +175,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
                 key={choice.id}
                 onClick={() => handleChoiceSelect(choice.id)}
                 disabled={isSubmitted}
-                className={`w-full p-3 md:p-4 rounded-2xl text-left text-lg ${buttonStyle}`}
+                className={`w-full p-3 md:p-4 rounded-3xl text-left text-lg ${buttonStyle}`}
               >
                 {/* Label Circle A, B, C, D */}
                 <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg transition-colors ${badgeStyle}`}>
@@ -213,7 +212,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
             <button
               onClick={handleSubmit}
               disabled={!selectedChoice}
-              className={`w-full py-3 rounded-2xl font-bold text-xl shadow-lg transition-all transform active:scale-95 ${
+              className={`w-full py-4 rounded-2xl font-bold text-xl shadow-lg transition-all transform active:scale-95 ${
                 selectedChoice 
                   ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200' 
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
@@ -223,15 +222,23 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
             </button>
           ) : (
             <div className="space-y-4">
-              <div className="bg-green-50 border-2 border-green-200 rounded-2xl p-5 animate-fade-in shadow-sm">
-                <h3 className="font-bold text-green-800 mb-2 flex items-center gap-2 text-lg">
-                  <CheckCircle size={24} /> เฉลย
-                </h3>
-                <p className="text-green-800 text-base leading-relaxed">{currentQuestion.explanation}</p>
+              <div className="bg-green-50 border-2 border-green-200 rounded-3xl p-5 animate-fade-in shadow-sm relative">
+                <div className="flex justify-between items-start mb-2">
+                    <h3 className="font-bold text-green-800 flex items-center gap-2 text-lg">
+                    <CheckCircle size={24} /> เฉลย
+                    </h3>
+                    <button 
+                        onClick={() => speak(currentQuestion.explanation)}
+                        className="bg-green-100 hover:bg-green-200 text-green-700 p-2 rounded-full transition-colors flex items-center gap-1 text-sm font-bold pr-3"
+                    >
+                        <Volume2 size={20} /> ฟังคำอธิบาย
+                    </button>
+                </div>
+                <p className="text-green-800 text-base leading-relaxed pl-1">{currentQuestion.explanation}</p>
               </div>
               <button
                 onClick={handleNext}
-                className="w-full py-3 rounded-2xl font-bold text-xl shadow-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 transition-all flex items-center justify-center gap-2 shadow-blue-200"
+                className="w-full py-4 rounded-2xl font-bold text-xl shadow-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 transition-all flex items-center justify-center gap-2 shadow-blue-200"
               >
                 {currentIndex < questions.length - 1 ? 'ข้อต่อไป' : 'ดูผลลัพธ์'} <ArrowRight size={24} />
               </button>

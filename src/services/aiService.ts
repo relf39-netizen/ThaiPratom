@@ -8,7 +8,7 @@ export interface GeneratedQuestion {
   c3: string;
   c4: string;
   correct: string;
-  explanation: string;
+  explanation?: string; // Optional now
   image?: string; 
 }
 
@@ -33,7 +33,7 @@ export const generateQuestionWithAI = async (
     const ai = new GoogleGenAI({ apiKey: apiKey });
     const model = "gemini-2.5-flash";
     
-    // Updated Prompt for Thai Grade 2
+    // Updated Prompt: Added Explanation Requirement back
     const prompt = `
       Create ${count} multiple-choice question(s) for Thai Elementary Grade 2 students.
       Subject: Thai Language (ภาษาไทย ป.2)
@@ -45,8 +45,8 @@ export const generateQuestionWithAI = async (
       - Return an array of objects.
       - Each object must have 4 choices (c1, c2, c3, c4).
       - Indicate the correct choice number (1, 2, 3, or 4).
-      - Provide a short explanation for the correct answer in Thai.
       - If the question is about a visual object (e.g., animal names, objects matching spelling), provide a concise English description in the 'image_description' field.
+      - **Provide a simple explanation for the correct answer in Thai (field: explanation).**
     `;
 
     const response = await ai.models.generateContent({
@@ -65,7 +65,7 @@ export const generateQuestionWithAI = async (
               c3: { type: Type.STRING, description: "Choice 3" },
               c4: { type: Type.STRING, description: "Choice 4" },
               correct: { type: Type.STRING, description: "The correct choice number '1', '2', '3', or '4'" },
-              explanation: { type: Type.STRING, description: "Explanation in Thai" },
+              explanation: { type: Type.STRING, description: "Simple explanation for the correct answer in Thai" },
               image_description: { type: Type.STRING, description: "Visual description in English for image generation (or 'none')" }
             },
             required: ["text", "c1", "c2", "c3", "c4", "correct", "explanation"],
@@ -85,7 +85,7 @@ export const generateQuestionWithAI = async (
         c3: item.c3,
         c4: item.c4,
         correct: item.correct,
-        explanation: item.explanation,
+        explanation: item.explanation || '',
         image: item.image_description ? generateImageUrl(item.image_description) : ''
       }));
     }

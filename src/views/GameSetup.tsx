@@ -131,6 +131,11 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
             schoolId: teacher.school,
             teacherName: teacher.name
         });
+
+        // ✅ Register Active Game for School (For auto-join)
+        // Sanitizing school name to be a valid Firebase key (replace special chars)
+        const schoolKey = teacher.school.replace(/[^a-zA-Z0-9]/g, '_');
+        await db.ref(`activeGames/${schoolKey}`).set(roomCode);
         
         onGameCreated(roomCode);
     } catch (e) {
