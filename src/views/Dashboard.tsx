@@ -1,5 +1,6 @@
+
 import React, { useState } from 'react';
-import { BookOpen, Gamepad2, BarChart3, Star, Calendar, CheckCircle, AlertCircle, History, ArrowLeft, Clock, Puzzle, Music, Users, Trees, Link as LinkIcon } from 'lucide-react';
+import { BookOpen, Gamepad2, BarChart3, Star, Calendar, CheckCircle, AlertCircle, History, ArrowLeft, Clock, Puzzle, Music, Users, Trees, Link as LinkIcon, Loader2 } from 'lucide-react';
 import { Student, Assignment, ExamResult, Subject } from '../types';
 
 interface DashboardProps {
@@ -14,6 +15,10 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examResults = [], onNavigate, onStartAssignment, onSelectSubject }) => {
   // state สำหรับสลับหน้าระหว่าง 'main' (หน้าหลัก) กับ 'history' (ประวัติ)
   const [view, setView] = useState<'main' | 'history'>('main');
+  const [notification, setNotification] = useState<string | null>(null);
+
+  // ป้องกันกรณี student เป็น null (แม้จะมีการเช็คที่ App.tsx แล้วก็ตาม)
+  if (!student) return <div className="p-10 text-center"><Loader2 className="animate-spin mx-auto"/></div>;
 
   // Subjects Data for Grade 2
   const subjects = [
@@ -89,7 +94,19 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
     return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
   };
   
+  const handleStartWithNotification = (assignment: Assignment) => {
+      setNotification(`กำลังเริ่มทำการบ้าน: ${assignment.subject}...`);
+      setTimeout(() => {
+          if(onStartAssignment) onStartAssignment(assignment);
+          setNotification(null);
+      }, 1000);
+  };
+
   const GRADE_LABELS: Record<string, string> = { 'P1': 'ป.1', 'P2': 'ป.2', 'P3': 'ป.3', 'P4': 'ป.4', 'P5': 'ป.5', 'P6': 'ป.6' };
+  
+  // ✅ Safe Name Access (Fix for TypeError: split is not a function)
+  const safeName = student.name ? String(student.name) : 'นักเรียน';
+  const studentFirstName = safeName.split(' ')[0] || safeName;
 
   // --- ส่วนแสดงผลหน้ารายละเอียดประวัติ ---
   if (view === 'history') {
@@ -153,7 +170,16 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
 
   // --- ส่วนแสดงผลหน้าหลัก (Dashboard) ---
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-6 pb-20 relative">
+      
+      {/* 🔔 Notification Toast */}
+      {notification && (
+        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 bg-gray-900/90 text-white px-6 py-3 rounded-full shadow-2xl z-50 animate-fade-in flex items-center gap-3">
+             <Loader2 size={20} className="animate-spin text-yellow-400" />
+             <span className="font-bold text-sm">{notification}</span>
+        </div>
+      )}
+
       {/* Welcome Banner */}
       <div className="bg-gradient-to-r from-pink-400 via-red-400 to-orange-400 rounded-[32px] p-6 text-white shadow-xl relative overflow-hidden border-b-8 border-orange-600/20">
         <div className="absolute top-0 right-0 opacity-10 transform translate-x-10 -translate-y-10 animate-pulse"><Star size={150} /></div>
@@ -164,7 +190,7 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
              {student.avatar}
           </div>
           <div className="text-center md:text-left">
-            <h2 className="text-3xl font-black mb-1 font-fun drop-shadow-md">สวัสดีจ้ะ, {student.name.split(' ')[0]}!</h2>
+            <h2 className="text-3xl font-black mb-1 font-fun drop-shadow-md">สวัสดีจ้ะ, {studentFirstName}!</h2>
             <div className="flex justify-center md:justify-start gap-2 text-white/90 items-center font-bold text-sm mb-3">
                 <span className="bg-black/10 px-2 py-0.5 rounded-lg">ชั้น {GRADE_LABELS[student.grade || 'P2'] || student.grade}</span>
                 <span>•</span>
@@ -208,7 +234,7 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
                                 )}
                             </div>
                             <button 
-                                onClick={() => onStartAssignment && onStartAssignment(hw)}
+                                onClick={() => handleStartWithNotification(hw)}
                                 className={`w-full sm:w-auto px-6 py-3 rounded-xl font-bold text-sm shadow-md transition-all hover:-translate-y-1 active:scale-95 border-b-4
                                   ${isExpired 
                                     ? 'bg-red-500 text-white hover:bg-red-600 border-red-700 active:border-b-0' 

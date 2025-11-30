@@ -7,7 +7,7 @@ import { db, firebase } from '../services/firebaseConfig';
 
 interface GameModeProps {
   student: Student;
-  initialRoomCode?: string; // ✅ รับค่าห้องถ้าเป็นครู (เข้าอัตโนมัติ)
+  initialRoomCode?: string; 
   onExit: () => void;
   onFinish?: (score: number, total: number) => void;
 }
@@ -40,7 +40,11 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
   const isAdmin = student.id === '99999'; 
   const timerRef = useRef<any>(null);
 
-  // ✅ ถ้าเป็นครู ให้ใช้รหัสห้องที่ส่งมาเลย
+  // ✅ Helper: Safe Name Splitter (Prevents crashing if name is undefined/number)
+  const getPlayerName = (name: any) => {
+     return String(name || 'Player').split(' ')[0];
+  };
+
   useEffect(() => {
       if (initialRoomCode && isAdmin) {
           setRoomCode(initialRoomCode);
@@ -48,23 +52,19 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
       }
   }, [initialRoomCode, isAdmin]);
 
-  // ✅ ถ้าเป็นนักเรียน ให้หาห้องอัตโนมัติจาก School ID
   useEffect(() => {
       if (!isAdmin && !initialRoomCode) {
-          const schoolKey = student.school?.replace(/[^a-zA-Z0-9]/g, '_') || 'default';
+          const schoolKey = (student.school || 'default').replace(/[^a-zA-Z0-9]/g, '_');
           const activeGameRef = db.ref(`activeGames/${schoolKey}`);
 
-          // Listen for active game changes
           activeGameRef.on('value', (snapshot) => {
               const activeCode = snapshot.val();
               if (activeCode) {
-                  // Found a game!
                   if (activeCode !== roomCode) {
                       setRoomCode(activeCode);
                       connectToRoom(activeCode);
                   }
               } else {
-                  // No active game
                   setStatus('WAITING');
                   setRoomCode('');
               }
@@ -102,11 +102,9 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
 
   useEffect(() => { return () => stopBGM(); }, []);
 
-  // ✅ ฟังก์ชันเชื่อมต่อห้อง
   const connectToRoom = (code: string) => {
     const roomPath = `games/${code}`;
     
-    // 1. เช็คว่าห้องมีอยู่จริงไหม
     db.ref(`${roomPath}/gameState`).once('value').then((snapshot) => {
         const gameState = snapshot.val();
         
@@ -115,19 +113,15 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
             return;
         }
 
-        // ✅ ผ่านทุกด่าน -> เริ่มเชื่อมต่อ Realtime
         setJoinError('');
         
-        // Listen to Connection
         const connectedRef = db.ref(".info/connected");
         connectedRef.on('value', (snap: any) => setConnectionError(snap.val() === false));
 
-        // Listen to Game State
         const gameStateRef = db.ref(`${roomPath}/gameState`);
         gameStateRef.on('value', (snap: any) => {
             const data = snap.val();
             if (data) {
-                // If game is finished, don't revert to lobby/waiting immediately if user is on results screen
                 setStatus(data.status || 'LOBBY');
                 setCurrentQuestionIndex(data.currentQuestionIndex || 0);
                 setTimer(data.timer || 0);
@@ -135,14 +129,12 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
                 
                 if (!isAdmin) registerPlayer(roomPath);
             } else {
-                // ห้องถูกลบ หรือจบเกม
                 setJoinError('ห้องสอบถูกปิดแล้ว');
                 setStatus('WAITING');
                 setRoomCode('');
             }
         });
 
-        // Listen to Players
         const playersRef = db.ref(`${roomPath}/players`);
         playersRef.on('value', (snap: any) => { 
             const val = snap.val();
@@ -154,11 +146,9 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
             }
         });
         
-        // Listen to Scores
         const scoresRef = db.ref(`${roomPath}/scores`);
         scoresRef.on('value', (snap: any) => { setScores(snap.val() || {}); });
 
-        // Listen to Questions
         const questionsRef = db.ref(`${roomPath}/questions`);
         questionsRef.on('value', (snap: any) => {
             const data = snap.val();
@@ -183,14 +173,12 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
         playerRef.onDisconnect().update({ online: false });
   };
 
-  // ✅ Trigger Reset เมื่อข้อเปลี่ยนจริงๆ เท่านั้น
   useEffect(() => {
      setHasAnswered(false);
      setSelectedChoice(null);
   }, [currentQuestionIndex]);
 
 
-  // Admin Game Loop
   useEffect(() => {
     if (!isAdmin || !roomCode || status === 'WAITING') return;
     
@@ -258,11 +246,10 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
   const handleAnswer = (choiceId: string) => {
     if (hasAnswered || timer <= 0 || !roomCode) return;
     setHasAnswered(true);
-    setSelectedChoice(choiceId); // ✅ บันทึกว่าเลือกข้อนี้
+    setSelectedChoice(choiceId); 
 
     const currentQ = questions[currentQuestionIndex];
     
-    // ✅ SUPER ROBUST CHECKING
     const normChoice = normalizeId(choiceId);
     const normCorrect = normalizeId(currentQ.correctChoiceId);
     
@@ -294,9 +281,6 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
   };
 
   const handleFinishAndExit = () => {
-      // Clear active game mapping on exit (optional cleanup, but good for testing)
-      // if (isAdmin) db.ref(`activeGames/${student.school.replace(/[^a-zA-Z0-9]/g, '_')}`).remove();
-      
       if (status === 'FINISHED' && onFinish && !isAdmin) {
           onFinish(correctCount, questions.length);
       } else {
@@ -312,32 +296,24 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
 
   // ---------- RENDER START ----------
 
-  // 1. หน้าค้นหาห้อง (สำหรับนักเรียน) - แสดงเมื่อยังไม่เจอ activeGames
   if (status === 'WAITING' && !isAdmin) {
       return (
           <div className="flex flex-col items-center justify-center min-h-[80vh] px-4">
               <div className="bg-white p-8 rounded-[40px] shadow-xl border-4 border-blue-100 w-full max-w-md text-center relative overflow-hidden">
-                  
-                  {/* Decor */}
                   <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-400 to-purple-400"></div>
-
                   <div className="bg-blue-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 text-blue-500 animate-pulse">
                       <Users size={40} />
                   </div>
-                  
                   <h2 className="text-2xl font-black text-gray-800 mb-2 font-fun">กำลังรอคุณครู...</h2>
                   <p className="text-gray-500 mb-8 font-medium">เมื่อคุณครูเปิดห้องสอบ เกมจะเริ่มอัตโนมัติครับ</p>
-                  
                   <div className="flex justify-center gap-2 mb-8">
                       <span className="w-3 h-3 bg-blue-400 rounded-full animate-bounce" style={{animationDelay:'0s'}}></span>
                       <span className="w-3 h-3 bg-blue-400 rounded-full animate-bounce" style={{animationDelay:'0.2s'}}></span>
                       <span className="w-3 h-3 bg-blue-400 rounded-full animate-bounce" style={{animationDelay:'0.4s'}}></span>
                   </div>
-
                   <div className="bg-gray-100 rounded-xl p-3 text-sm text-gray-500 font-mono">
                       School: {student.school}
                   </div>
-                  
                   <button onClick={onExit} className="mt-8 text-red-400 text-sm hover:text-red-600 font-bold bg-red-50 px-4 py-2 rounded-lg">ยกเลิก</button>
               </div>
           </div>
@@ -369,7 +345,6 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
       <div className="text-center py-10 min-h-[70vh] flex flex-col justify-center relative bg-gradient-to-b from-blue-50 to-white rounded-3xl border-4 border-blue-100">
         <button onClick={toggleSound} className={`absolute top-4 right-4 p-3 rounded-full shadow ${isMuted?'bg-gray-200':'bg-white'}`}>{isMuted?<VolumeX/>:<Volume2/>}</button>
         
-        {/* ✅ แสดงรหัสห้อง (เฉพาะครูเห็นชัดๆ นักเรียนไม่ต้องใส่ใจ) */}
         {isAdmin && (
             <div className="mb-6">
                 <div className="text-gray-500 font-bold uppercase tracking-widest text-xs mb-1">GAME PIN</div>
@@ -386,7 +361,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
             {sortedPlayers.map((p: any, i) => (
               <div key={i} className="flex flex-col items-center animate-fade-in transform hover:scale-110 transition">
                   <div className="text-3xl bg-white w-14 h-14 rounded-full flex items-center justify-center border-4 border-blue-100 shadow-sm">{p.avatar}</div>
-                  <span className="text-[10px] font-bold mt-1 bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">{p.name.split(' ')[0]}</span>
+                  <span className="text-[10px] font-bold mt-1 bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">{getPlayerName(p.name)}</span>
               </div>
             ))}
             {sortedPlayers.length === 0 && <div className="text-gray-300 italic">รอเพื่อนๆ เข้ามา...</div>}
@@ -498,14 +473,10 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
  
                              return (
                                 <button key={c.id} onClick={()=>handleAnswer(c.id)} disabled={hasAnswered || timer<=0} className={`p-4 md:p-5 rounded-3xl font-bold text-lg border-b-8 relative overflow-hidden transition active:scale-95 active:border-b-0 active:translate-y-2 ${btnClass}`}>
-                                    {/* Show Correct Check */}
                                     {(hasAnswered || timer<=0) && normalizeId(c.id) === normalizeId(currentQuestion.correctChoiceId) && <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center z-10"><CheckCircle className="text-green-600 w-10 h-10 drop-shadow-md bg-white rounded-full"/></div>}
-                                    
-                                    {/* Show Wrong Cross */}
                                     {(hasAnswered || timer<=0) && isSelected && normalizeId(c.id) !== normalizeId(currentQuestion.correctChoiceId) && (
                                         <div className="absolute inset-0 bg-red-500/20 flex items-center justify-center z-10"><XCircle className="text-red-600 w-10 h-10 drop-shadow-md bg-white rounded-full"/></div>
                                     )}
-
                                     {c.text}
                                 </button>
                              );
@@ -518,7 +489,6 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
                 <h3 className="text-center font-black text-xl mb-4 flex items-center justify-center gap-2 uppercase tracking-wider text-yellow-400 drop-shadow-md font-fun">
                     <Trophy className="fill-yellow-400" /> คะแนนสูงสุด
                 </h3>
-                {/* แสดงคะแนนส่วนตัวด้วย */}
                 <div className="bg-white/10 p-3 rounded-2xl mb-4 flex justify-between items-center border border-white/20">
                     <span className="font-bold text-sm">คะแนนของฉัน</span>
                     <span className="font-black text-2xl text-yellow-400 animate-pulse">{scores[student.id] || 0}</span>
@@ -531,7 +501,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
                                 <div className={`font-black text-xl w-8 h-8 flex items-center justify-center rounded-full ${i<3?'bg-white/30':'bg-black/20'}`}>{i+1}</div>
                                 <span className="text-2xl">{p.avatar}</span>
                                 <div className="flex flex-col">
-                                    <span className="font-bold text-sm truncate max-w-[80px]">{p.name.split(' ')[0]}</span>
+                                    <span className="font-bold text-sm truncate max-w-[80px]">{getPlayerName(p.name)}</span>
                                 </div>
                             </div>
                             <span className="font-black text-xl">{scores[p.id]||0}</span>
@@ -559,7 +529,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
                 {sortedPlayers[1] && (
                     <div className="flex flex-col items-center w-1/3 animate-slide-up" style={{animationDelay: '0.2s'}}>
                         <div className="text-5xl mb-2">{sortedPlayers[1].avatar}</div>
-                        <div className="text-sm font-bold text-gray-600 mb-1">{sortedPlayers[1].name}</div>
+                        <div className="text-sm font-bold text-gray-600 mb-1">{getPlayerName(sortedPlayers[1].name)}</div>
                         <div className="w-full bg-gray-200 h-32 rounded-t-2xl border-b-8 border-gray-300 flex items-center justify-center text-4xl font-black text-gray-500 shadow-lg">2</div>
                     </div>
                 )}
@@ -567,7 +537,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
                     <div className="flex flex-col items-center w-1/3 z-10 animate-slide-up">
                         <Crown className="text-yellow-500 mb-2 animate-pulse" size={40} />
                         <div className="text-7xl mb-2 transform hover:scale-110 transition">{sortedPlayers[0].avatar}</div>
-                        <div className="text-lg font-bold text-yellow-600 mb-1">{sortedPlayers[0].name}</div>
+                        <div className="text-lg font-bold text-yellow-600 mb-1">{getPlayerName(sortedPlayers[0].name)}</div>
                         <div className="w-full bg-yellow-400 h-48 rounded-t-2xl border-b-8 border-yellow-500 flex items-center justify-center text-6xl font-black text-yellow-800 shadow-xl relative overflow-hidden">
                             1
                             <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
@@ -577,7 +547,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
                 {sortedPlayers[2] && (
                     <div className="flex flex-col items-center w-1/3 animate-slide-up" style={{animationDelay: '0.4s'}}>
                         <div className="text-5xl mb-2">{sortedPlayers[2].avatar}</div>
-                        <div className="text-sm font-bold text-orange-700 mb-1">{sortedPlayers[2].name}</div>
+                        <div className="text-sm font-bold text-orange-700 mb-1">{getPlayerName(sortedPlayers[2].name)}</div>
                         <div className="w-full bg-orange-300 h-24 rounded-t-2xl border-b-8 border-orange-400 flex items-center justify-center text-4xl font-black text-orange-800 shadow-lg">3</div>
                     </div>
                 )}
