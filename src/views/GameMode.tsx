@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Student, Question } from '../types';
-import { Users, Trophy, Play, CheckCircle, Volume2, VolumeX, Crown, Zap, AlertTriangle, XCircle, KeyRound, LogIn, Loader2 } from 'lucide-react';
+import { Users, Trophy, Play, CheckCircle, Volume2, VolumeX, Crown, Zap, XCircle, Gamepad2, Loader2, User } from 'lucide-react';
 import { speak, playBGM, stopBGM, playSFX, toggleMuteSystem } from '../utils/soundUtils';
 import { db, firebase } from '../services/firebaseConfig';
 
@@ -40,11 +40,11 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
   const isAdmin = student.id === '99999'; 
   const timerRef = useRef<any>(null);
 
-  // ✅ Helper: Safe Name Splitter (Prevents crashing if name is undefined/number)
   const getPlayerName = (name: any) => {
      return String(name || 'Player').split(' ')[0];
   };
 
+  // 1. Initial Room Code from Props
   useEffect(() => {
       if (initialRoomCode && isAdmin) {
           setRoomCode(initialRoomCode);
@@ -52,6 +52,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
       }
   }, [initialRoomCode, isAdmin]);
 
+  // 2. Listen for School's Active Game
   useEffect(() => {
       if (!isAdmin && !initialRoomCode) {
           const schoolKey = (student.school || 'default').replace(/[^a-zA-Z0-9]/g, '_');
@@ -60,13 +61,12 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
           activeGameRef.on('value', (snapshot) => {
               const activeCode = snapshot.val();
               if (activeCode) {
-                  if (activeCode !== roomCode) {
-                      setRoomCode(activeCode);
-                      connectToRoom(activeCode);
-                  }
+                  setRoomCode(activeCode);
               } else {
-                  setStatus('WAITING');
                   setRoomCode('');
+                  if (status === 'WAITING') {
+                      // Stay waiting
+                  }
               }
           });
 
@@ -101,6 +101,12 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
   }, [status, audioEnabled]);
 
   useEffect(() => { return () => stopBGM(); }, []);
+
+  const handleJoinRoom = () => {
+      if(roomCode) {
+          connectToRoom(roomCode);
+      }
+  };
 
   const connectToRoom = (code: string) => {
     const roomPath = `games/${code}`;
@@ -298,23 +304,46 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
 
   if (status === 'WAITING' && !isAdmin) {
       return (
-          <div className="flex flex-col items-center justify-center min-h-[80vh] px-4">
+          <div className="flex flex-col items-center justify-center min-h-[80vh] px-4 animate-fade-in">
               <div className="bg-white p-8 rounded-[40px] shadow-xl border-4 border-blue-100 w-full max-w-md text-center relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-400 to-purple-400"></div>
-                  <div className="bg-blue-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 text-blue-500 animate-pulse">
-                      <Users size={40} />
-                  </div>
-                  <h2 className="text-2xl font-black text-gray-800 mb-2 font-fun">กำลังรอคุณครู...</h2>
-                  <p className="text-gray-500 mb-8 font-medium">เมื่อคุณครูเปิดห้องสอบ เกมจะเริ่มอัตโนมัติครับ</p>
-                  <div className="flex justify-center gap-2 mb-8">
-                      <span className="w-3 h-3 bg-blue-400 rounded-full animate-bounce" style={{animationDelay:'0s'}}></span>
-                      <span className="w-3 h-3 bg-blue-400 rounded-full animate-bounce" style={{animationDelay:'0.2s'}}></span>
-                      <span className="w-3 h-3 bg-blue-400 rounded-full animate-bounce" style={{animationDelay:'0.4s'}}></span>
-                  </div>
-                  <div className="bg-gray-100 rounded-xl p-3 text-sm text-gray-500 font-mono">
-                      School: {student.school}
-                  </div>
-                  <button onClick={onExit} className="mt-8 text-red-400 text-sm hover:text-red-600 font-bold bg-red-50 px-4 py-2 rounded-lg">ยกเลิก</button>
+                  
+                  {roomCode ? (
+                      <>
+                        <div className="bg-green-100 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 text-green-600 animate-bounce">
+                            <Gamepad2 size={48} />
+                        </div>
+                        <h2 className="text-2xl font-black text-gray-800 mb-2 font-fun">พบห้องแข่งขันแล้ว!</h2>
+                        <p className="text-gray-500 mb-8 font-medium">กดปุ่มด้านล่างเพื่อเข้าห้องได้เลย</p>
+                        
+                        <button 
+                            onClick={handleJoinRoom}
+                            className="w-full bg-gradient-to-r from-green-500 to-emerald-500 text-white text-xl font-bold py-4 rounded-2xl shadow-lg hover:scale-105 transition-transform animate-pulse"
+                        >
+                            เข้าร่วมแข่งขัน
+                        </button>
+                      </>
+                  ) : (
+                      <>
+                        <div className="bg-blue-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 text-blue-500">
+                            <Loader2 size={40} className="animate-spin" />
+                        </div>
+                        <h2 className="text-2xl font-black text-gray-800 mb-2 font-fun">กำลังรอคุณครู...</h2>
+                        <p className="text-gray-500 mb-8 font-medium">เมื่อครูเปิดห้องสอบ ปุ่มเข้าเกมจะปรากฏขึ้น</p>
+                        
+                        <div className="bg-gray-100 rounded-xl p-4 flex items-center gap-3 mb-6">
+                            <div className="bg-white p-2 rounded-full border border-gray-200">
+                                <User size={20} className="text-gray-400"/>
+                            </div>
+                            <div className="text-left">
+                                <div className="text-xs text-gray-400 font-bold uppercase">ผู้เล่น</div>
+                                <div className="text-sm font-bold text-gray-700">{student.name}</div>
+                            </div>
+                        </div>
+                      </>
+                  )}
+                  
+                  <button onClick={onExit} className="mt-4 text-gray-400 text-sm hover:text-red-500 font-bold px-4 py-2 rounded-lg">ยกเลิก</button>
               </div>
           </div>
       );
@@ -342,7 +371,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
 
   if (status === 'LOBBY') {
     return (
-      <div className="text-center py-10 min-h-[70vh] flex flex-col justify-center relative bg-gradient-to-b from-blue-50 to-white rounded-3xl border-4 border-blue-100">
+      <div className="text-center py-10 min-h-[70vh] flex flex-col justify-center relative bg-gradient-to-b from-blue-50 to-white rounded-3xl border-4 border-blue-100 animate-fade-in">
         <button onClick={toggleSound} className={`absolute top-4 right-4 p-3 rounded-full shadow ${isMuted?'bg-gray-200':'bg-white'}`}>{isMuted?<VolumeX/>:<Volume2/>}</button>
         
         {isAdmin && (
@@ -516,7 +545,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
 
   if (status === 'FINISHED') {
     return (
-        <div className="max-w-4xl mx-auto py-10">
+        <div className="max-w-4xl mx-auto py-10 animate-fade-in">
             <div className="text-center mb-10">
                 <div className="relative inline-block">
                     <div className="absolute inset-0 bg-yellow-400 blur-3xl opacity-30 animate-pulse"></div>
@@ -583,7 +612,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
     );
   }
 
-  return <div className="flex flex-col items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-4 border-blue-600 mb-4"></div><p className="text-gray-400 animate-pulse">กำลังค้นหาห้องสอบ...</p></div>;
+  return <div className="flex flex-col items-center justify-center h-64"><Loader2 className="animate-spin text-blue-600 mb-4" size={40}/><p className="text-gray-400 animate-pulse">กำลังค้นหาห้องสอบ...</p></div>;
 };
 
 export default GameMode;

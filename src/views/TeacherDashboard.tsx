@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Teacher, Student, Subject, Assignment, Question, SubjectDef } from '../types';
 import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, Sparkles, Wand2, Library, ArrowLeft, GraduationCap, Trash2, Edit, UserCog, Clock, PenTool, Bot, Info, ExternalLink, ImageIcon } from 'lucide-react';
-import { getTeacherDashboard, manageStudent, addAssignment, addQuestion, editQuestion, GOOGLE_SCRIPT_URL, deleteQuestion, deleteAssignment } from '../services/api';
+import { getTeacherDashboard, manageStudent, addAssignment, addQuestion, editQuestion, GOOGLE_SCRIPT_URL, deleteQuestion, deleteAssignment, getTeachers, manageTeacher } from '../services/api';
 import { generateQuestionWithAI, GeneratedQuestion } from '../services/aiService';
 import { getSchoolSubjects, addSubject, deleteSubject } from '../services/subjectService';
 
@@ -38,12 +38,13 @@ const COLOR_OPTIONS = [
 const ICONS = ['📖', '📐', '🧬', '🎨', '🎵', '⚽', '🌍', '💻', '🧩', '📝'];
 
 const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, onStartGame }) => {
-  const [activeTab, setActiveTab] = useState<'menu' | 'students' | 'subjects' | 'stats' | 'questions' | 'assignments' | 'profile'>('menu');
+  const [activeTab, setActiveTab] = useState<'menu' | 'students' | 'subjects' | 'stats' | 'questions' | 'assignments' | 'teachers'>('menu');
   
   const [students, setStudents] = useState<Student[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [stats, setStats] = useState<any[]>([]);
-  const [questions, setQuestions] = useState<Question[]>([]); 
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [teachersList, setTeachersList] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Custom Subjects State
@@ -69,6 +70,13 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingMessage, setProcessingMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Teacher Management State
+  const [newTeacherName, setNewTeacherName] = useState('');
+  const [newTeacherUsername, setNewTeacherUsername] = useState('');
+  const [newTeacherPassword, setNewTeacherPassword] = useState('');
+  const [newTeacherSchool, setNewTeacherSchool] = useState('');
+  const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null);
 
   // Question Bank State
   const [qBankSelectedGrade, setQBankSelectedGrade] = useState<string | null>(null);
@@ -105,7 +113,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       title: string;
       message: string;
       targetId: string;
-      type: 'STUDENT' | 'ASSIGNMENT' | 'QUESTION' | 'SUBJECT';
+      type: 'STUDENT' | 'ASSIGNMENT' | 'QUESTION' | 'SUBJECT' | 'TEACHER';
   }>({
       isOpen: false,
       title: '',
@@ -115,6 +123,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   });
 
   const normalizeId = (id: any) => id ? String(id).trim() : '';
+  const isAdmin = teacher.username?.toLowerCase() === 'admin' || teacher.role === 'ADMIN' || teacher.role === 'admin';
 
   useEffect(() => {
     loadData();
@@ -148,11 +157,16 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       setSubjectLoading(true);
       // Fetch custom subjects from database
       const customSubjects = await getSchoolSubjects(teacher.school);
-      
-      // DO NOT Fallback to defaults. If empty, it stays empty.
       setSchoolSubjects(customSubjects);
-      
       setSubjectLoading(false);
+  };
+
+  const loadTeachers = async () => {
+     setIsProcessing(true);
+     setProcessingMessage('กำลังโหลดข้อมูลครู...');
+     const list = await getTeachers();
+     setTeachersList(list);
+     setIsProcessing(false);
   };
 
   const handleAddSubject = async () => {
@@ -179,12 +193,13 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       return null; 
   };
 
-  const openDeleteModal = (targetId: string, type: 'STUDENT' | 'ASSIGNMENT' | 'QUESTION' | 'SUBJECT') => {
+  const openDeleteModal = (targetId: string, type: 'STUDENT' | 'ASSIGNMENT' | 'QUESTION' | 'SUBJECT' | 'TEACHER') => {
       let title = '', message = '';
       if (type === 'STUDENT') { title = 'ยืนยันลบนักเรียน'; message = 'ข้อมูลคะแนนจะหายไปด้วย'; }
       if (type === 'ASSIGNMENT') { title = 'ยืนยันลบการบ้าน'; message = 'ข้อมูลการส่งงานจะหายไป'; }
       if (type === 'QUESTION') { title = 'ยืนยันลบข้อสอบ'; message = 'ลบออกจากคลังข้อสอบ'; }
       if (type === 'SUBJECT') { title = 'ยืนยันลบรายวิชา'; message = 'วิชานี้จะหายไปจากหน้านักเรียน'; }
+      if (type === 'TEACHER') { title = 'ยืนยันลบข้อมูลครู'; message = 'บัญชีนี้จะไม่สามารถเข้าสู่ระบบได้'; }
 
       setDeleteModal({ isOpen: true, title, message, targetId, type });
   };
@@ -212,6 +227,17 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
           await deleteQuestion(targetId);
           setQuestions(prev => prev.filter(q => q.id !== targetId));
           alert('✅ ลบข้อสอบสำเร็จ');
+      } else if (type === 'TEACHER') {
+          setIsProcessing(true);
+          setProcessingMessage('กำลังลบข้อมูลครู...');
+          const result = await manageTeacher({ action: 'delete', id: targetId });
+          if (result.success) {
+              setTeachersList(prev => prev.filter(t => String(t.id) !== String(targetId)));
+              alert('✅ ลบข้อมูลสำเร็จ');
+          } else {
+              alert('เกิดข้อผิดพลาดในการลบ');
+          }
+          setIsProcessing(false);
       }
   };
 
@@ -269,6 +295,49 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       } finally {
           setIsSaving(false);
       }
+  };
+
+  const handleEditTeacher = (t: Teacher) => {
+      setEditingTeacherId(String(t.id));
+      setNewTeacherName(t.name);
+      setNewTeacherUsername(t.username || '');
+      setNewTeacherPassword(t.password || '');
+      setNewTeacherSchool(t.school);
+      // Scroll to form if needed
+      document.getElementById('teacher-form')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const handleSaveTeacher = async () => {
+      if (!newTeacherName || !newTeacherUsername || !newTeacherPassword || !newTeacherSchool) {
+          return alert("กรุณากรอกข้อมูลให้ครบถ้วน");
+      }
+
+      setIsSaving(true);
+      const action = editingTeacherId ? 'edit' : 'add';
+
+      const result = await manageTeacher({
+          action,
+          id: editingTeacherId || undefined,
+          name: newTeacherName,
+          username: newTeacherUsername,
+          password: newTeacherPassword,
+          school: newTeacherSchool
+      });
+
+      if (result.success) {
+          alert('✅ บันทึกข้อมูลครูสำเร็จ');
+          // Refresh list
+          loadTeachers();
+          // Reset Form
+          setNewTeacherName('');
+          setNewTeacherUsername('');
+          setNewTeacherPassword('');
+          setNewTeacherSchool('');
+          setEditingTeacherId(null);
+      } else {
+          alert('บันทึกไม่สำเร็จ: ' + (result.message || 'Unknown error'));
+      }
+      setIsSaving(false);
   };
   
   const handleEditQuestion = (q: Question) => {
@@ -458,7 +527,10 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       {/* Header */}
       <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-6 rounded-b-3xl md:rounded-3xl shadow-lg mb-8 flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold flex items-center gap-2"><GraduationCap size={28} /> ห้องพักครู</h2>
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <GraduationCap size={28} /> ห้องพักครู
+            {isAdmin && <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full border border-red-400 shadow-sm">Admin</span>}
+          </h2>
           <div className="opacity-90 text-sm mt-1">{teacher.school} • คุณครู{teacher.name}</div>
         </div>
         <button onClick={onLogout} className="bg-white/20 hover:bg-white/30 p-2 rounded-xl transition backdrop-blur-sm"><LogOut size={20} /></button>
@@ -468,6 +540,12 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 px-4 md:px-0">
             <MenuCard icon={<UserPlus size={40} />} title="จัดการนักเรียน" desc="ลงทะเบียนนักเรียน ป.1-6" color="bg-purple-50 text-purple-600 border-purple-200" onClick={() => setActiveTab('students')} />
             <MenuCard icon={<Library size={40} />} title="จัดการรายวิชา" desc="สร้างวิชาเรียนเอง" color="bg-indigo-50 text-indigo-600 border-indigo-200" onClick={() => { setActiveTab('subjects'); loadSubjects(); }} />
+            
+            {/* Show Teacher Management Only for Admin */}
+            {isAdmin && (
+                <MenuCard icon={<UserCog size={40} />} title="จัดการข้อมูลครู" desc="เพิ่ม/แก้ไข บัญชีครู" color="bg-teal-50 text-teal-600 border-teal-200" onClick={() => { setActiveTab('teachers'); loadTeachers(); }} />
+            )}
+            
             <MenuCard icon={<Calendar size={40} />} title="สั่งการบ้าน" desc="มอบหมายงานให้นักเรียน" color="bg-orange-50 text-orange-600 border-orange-200" onClick={() => { setActiveTab('assignments'); loadSubjects(); }} />
             <MenuCard icon={<BarChart2 size={40} />} title="ดูผลคะแนน" desc="สถิติการสอบ" color="bg-green-50 text-green-600 border-green-200" onClick={() => setActiveTab('stats')} />
             <MenuCard icon={<FileText size={40} />} title="คลังข้อสอบ" desc="เพิ่มและจัดการข้อสอบ" color="bg-blue-50 text-blue-600 border-blue-200" onClick={() => { setActiveTab('questions'); loadSubjects(); }} />
@@ -479,6 +557,69 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         <div className="bg-white rounded-3xl shadow-sm p-4 md:p-6 min-h-[400px] relative animate-fade-in">
             <button onClick={() => { setActiveTab('menu'); setQBankSelectedGrade(null); setViewingSubjectGrade(null); }} className="mb-6 flex items-center gap-2 text-gray-500 hover:text-purple-600 font-bold transition-colors"><div className="bg-gray-100 p-2 rounded-full"><ArrowLeft size={20} /></div> กลับเมนูหลัก</button>
             
+            {/* TEACHER MANAGEMENT TAB - ADMIN ONLY */}
+            {activeTab === 'teachers' && isAdmin && (
+                <div className="grid md:grid-cols-2 gap-8">
+                    <div id="teacher-form">
+                        <h3 className="text-lg font-bold text-gray-800 mb-4">{editingTeacherId ? 'แก้ไขข้อมูลครู' : 'เพิ่มบัญชีครูใหม่'}</h3>
+                        <div className="bg-teal-50 p-6 rounded-2xl border border-teal-200">
+                             <div className="mb-4">
+                                 <label className="block text-sm font-medium text-gray-600 mb-2">ชื่อ-นามสกุล</label>
+                                 <input type="text" value={newTeacherName} onChange={e => setNewTeacherName(e.target.value)} className="w-full p-3 border rounded-xl bg-white" placeholder="เช่น คุณครูใจดี"/>
+                             </div>
+                             <div className="mb-4">
+                                 <label className="block text-sm font-medium text-gray-600 mb-2">โรงเรียน</label>
+                                 <input type="text" value={newTeacherSchool} onChange={e => setNewTeacherSchool(e.target.value)} className="w-full p-3 border rounded-xl bg-white" placeholder="ระบุชื่อโรงเรียน"/>
+                             </div>
+                             <div className="mb-4">
+                                 <label className="block text-sm font-medium text-gray-600 mb-2">Username (สำหรับเข้าสู่ระบบ)</label>
+                                 <input type="text" value={newTeacherUsername} onChange={e => setNewTeacherUsername(e.target.value)} className="w-full p-3 border rounded-xl bg-white" placeholder="username"/>
+                             </div>
+                             <div className="mb-6">
+                                 <label className="block text-sm font-medium text-gray-600 mb-2">Password</label>
+                                 <input type="text" value={newTeacherPassword} onChange={e => setNewTeacherPassword(e.target.value)} className="w-full p-3 border rounded-xl bg-white" placeholder="password"/>
+                             </div>
+                             <button onClick={handleSaveTeacher} disabled={isSaving} className="w-full bg-teal-600 text-white py-3 rounded-xl font-bold hover:bg-teal-700 disabled:opacity-50">
+                                {isSaving ? 'กำลังบันทึก...' : 'บันทึกข้อมูล'}
+                             </button>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <div className="flex justify-between items-center mb-4">
+                            <h4 className="text-sm font-bold text-gray-500">รายชื่อครูทั้งหมด</h4>
+                            <button onClick={loadTeachers} className="text-teal-600 hover:bg-teal-50 p-1 rounded"><RefreshCw size={14}/></button>
+                        </div>
+                        <div className="border border-gray-100 rounded-xl overflow-hidden">
+                             {teachersList.length === 0 ? (
+                                 <div className="p-10 text-center text-gray-400">ไม่พบข้อมูลครู</div>
+                             ) : (
+                                 <table className="w-full text-sm text-left">
+                                     <thead className="bg-gray-50 text-gray-600">
+                                         <tr><th className="p-3">ชื่อ</th><th className="p-3">โรงเรียน</th><th className="p-3">จัดการ</th></tr>
+                                     </thead>
+                                     <tbody>
+                                         {teachersList.map((t) => (
+                                             <tr key={t.id} className="border-b hover:bg-gray-50 last:border-0">
+                                                 <td className="p-3 font-bold text-gray-800">
+                                                     {t.name}
+                                                     <div className="text-xs text-gray-400 font-normal">@{t.username}</div>
+                                                 </td>
+                                                 <td className="p-3 text-gray-600">{t.school}</td>
+                                                 <td className="p-3 flex gap-2">
+                                                     <button onClick={() => handleEditTeacher(t)} className="text-blue-500 hover:bg-blue-50 p-1 rounded"><Edit size={16}/></button>
+                                                     <button onClick={() => openDeleteModal(String(t.id), 'TEACHER')} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={16}/></button>
+                                                 </td>
+                                             </tr>
+                                         ))}
+                                     </tbody>
+                                 </table>
+                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* SUBJECT MANAGEMENT TAB */}
             {activeTab === 'subjects' && (
                 <div className="max-w-4xl mx-auto">

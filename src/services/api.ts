@@ -68,6 +68,43 @@ export const teacherLogin = async (username: string, password: string): Promise<
   }
 };
 
+// ✅ Get All Teachers (Admin)
+export const getTeachers = async (): Promise<Teacher[]> => {
+  if (!GOOGLE_SCRIPT_URL) return [];
+  try {
+    const response = await fetch(getUrl(`?type=get_teachers`));
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    console.error("Get teachers error", e);
+    return [];
+  }
+};
+
+// ✅ Manage Teacher (Add/Edit/Delete)
+export const manageTeacher = async (data: { action: 'add' | 'edit' | 'delete', id?: string, name?: string, username?: string, password?: string, school?: string }): Promise<{success: boolean, message?: string}> => {
+  if (!GOOGLE_SCRIPT_URL) return { success: false, message: 'No URL' };
+  
+  try {
+    const params = new URLSearchParams();
+    params.append('type', 'manage_teacher');
+    
+    if (data.action) params.append('action', data.action);
+    if (data.id) params.append('id', String(data.id));
+    if (data.name) params.append('name', String(data.name));
+    if (data.username) params.append('username', String(data.username));
+    if (data.password) params.append('password', String(data.password));
+    if (data.school) params.append('school', String(data.school));
+    
+    const response = await fetch(getUrl(`?${params.toString()}`));
+    const result = await response.json();
+    return result;
+
+  } catch (e) {
+    return { success: false, message: 'Connection Error' };
+  }
+};
+
 // ✅ Manage Student (Add/Edit/Delete)
 export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', id?: string, name?: string, school?: string, avatar?: string, grade?: string, teacherId?: string }): Promise<{success: boolean, student?: Student, message?: string, rawError?: boolean}> => {
   if (!GOOGLE_SCRIPT_URL) return { success: false, message: 'No URL' };
