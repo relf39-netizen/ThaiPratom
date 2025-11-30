@@ -25,13 +25,14 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
     if (allQuestions && allQuestions.length > 0) {
         setLoading(true);
 
-        // 1. Shuffle Questions
+        // 1. Shuffle Questions (สุ่มลำดับโจทย์)
         const shuffledQuestions = [...allQuestions].sort(() => 0.5 - Math.random());
 
-        // 2. Limit to 10
+        // 2. Limit to 10 (ตัดเหลือ 10 ข้อ สำหรับการฝึกฝนทั่วไป)
+        // หมายเหตุ: ถ้าเป็นการบ้าน App.tsx จะตัดมาให้ตามจำนวนที่ครูสั่งแล้ว แต่ถ้าเกิน 10 ข้อในโหมดฝึกเล่นๆ เราจะตัดที่นี้
         const limitedQuestions = shuffledQuestions.slice(0, 10);
 
-        // 3. Sanitize and Shuffle Choices
+        // 3. Sanitize and Shuffle Choices (สุ่มตัวเลือกภายในข้อ)
         const finalQuestions = limitedQuestions.map(q => {
             const safeChoices = q.choices.map((c, idx) => ({
                 ...c,
@@ -73,6 +74,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
         setLoading(false);
     } else {
         setLoading(false); 
+        setQuestions([]);
     }
   }, [allQuestions]);
 

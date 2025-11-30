@@ -1,7 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BookOpen, Gamepad2, BarChart3, Star, Calendar, CheckCircle, AlertCircle, History, ArrowLeft, Clock, Puzzle, Music, Users, Trees, Link as LinkIcon, Loader2 } from 'lucide-react';
-import { Student, Assignment, ExamResult, Subject } from '../types';
+import { Student, Assignment, ExamResult, Subject, SubjectDef } from '../types';
+import { getSchoolSubjects } from '../services/subjectService';
 
 interface DashboardProps {
   student: Student;
@@ -13,63 +14,38 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examResults = [], onNavigate, onStartAssignment, onSelectSubject }) => {
-  // state สำหรับสลับหน้าระหว่าง 'main' (หน้าหลัก) กับ 'history' (ประวัติ)
   const [view, setView] = useState<'main' | 'history'>('main');
   const [notification, setNotification] = useState<string | null>(null);
+  const [displaySubjects, setDisplaySubjects] = useState<SubjectDef[]>([]);
+  const [loadingSubjects, setLoadingSubjects] = useState(true);
 
-  // ป้องกันกรณี student เป็น null (แม้จะมีการเช็คที่ App.tsx แล้วก็ตาม)
   if (!student) return <div className="p-10 text-center"><Loader2 className="animate-spin mx-auto"/></div>;
 
-  // Subjects Data for Grade 2
-  const subjects = [
-    { 
-      id: Subject.SPELLING, 
-      name: 'มาตราตัวสะกด', 
-      icon: <Puzzle size={40} />, 
-      color: 'bg-red-50 hover:bg-red-100 border-red-200 text-red-600',
-      shadow: 'shadow-red-100',
-      desc: 'แม่ ก กา และ 8 มาตรา'
-    },
-    { 
-      id: Subject.TONES, 
-      name: 'การผันวรรณยุกต์', 
-      icon: <Music size={40} />, 
-      color: 'bg-yellow-50 hover:bg-yellow-100 border-yellow-200 text-yellow-600',
-      shadow: 'shadow-yellow-100',
-      desc: 'สามัญ เอก โท ตรี จัตวา'
-    },
-    { 
-      id: Subject.CLUSTERS, 
-      name: 'คำควบกล้ำ', 
-      icon: <Users size={40} />, 
-      color: 'bg-green-50 hover:bg-green-100 border-green-200 text-green-600',
-      shadow: 'shadow-green-100',
-      desc: 'ร ล ว ควบแท้/ไม่แท้'
-    },
-    { 
-      id: Subject.ROHAN, 
-      name: 'คำที่มี รร', 
-      icon: <Trees size={40} />, 
-      color: 'bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-600',
-      shadow: 'shadow-blue-100',
-      desc: 'อ่านคำที่ใช้ ร หัน (รร)'
-    },
-    { 
-      id: Subject.RHYMES, 
-      name: 'คำคล้องจอง', 
-      icon: <LinkIcon size={40} />, 
-      color: 'bg-purple-50 hover:bg-purple-100 border-purple-200 text-purple-600',
-      shadow: 'shadow-purple-100',
-      desc: 'สระและตัวสะกดเดียวกัน'
-    }
-  ];
+  useEffect(() => {
+      const load = async () => {
+          if (student.school) {
+              // 1. Fetch subjects created by the teacher
+              const custom = await getSchoolSubjects(student.school);
+              
+              // 2. Identify Student Grade (Default to P2 if missing)
+              const studentGrade = student.grade || 'P2';
+              
+              // 3. STRICT FILTER: Only show subjects that match the student's grade
+              const filtered = custom.filter(s => s.grade === studentGrade);
+              
+              setDisplaySubjects(filtered);
+          } else {
+              setDisplaySubjects([]);
+          }
+          setLoadingSubjects(false);
+      };
+      load();
+  }, [student]);
 
-  // กรองข้อมูล (โรงเรียนตรงกัน + ระดับชั้นตรงกัน)
+  // Filter assignments by School AND Grade
   const myAssignments = assignments.filter(a => {
-      // 1. เช็คโรงเรียน
       if (a.school !== student.school) return false;
-
-      // 2. เช็คระดับชั้น (ถ้าการบ้านระบุชั้น และไม่ตรงกับนักเรียน ให้ซ่อน)
+      // If assignment has a specific grade (not ALL), and student has a grade, they must match
       if (a.grade && a.grade !== 'ALL' && student.grade) {
           if (a.grade !== student.grade) return false;
       }
@@ -79,7 +55,7 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
   const finishedAssignments = myAssignments.filter(a => examResults.some(r => r.assignmentId === a.id));
   const pendingAssignments = myAssignments.filter(a => !examResults.some(r => r.assignmentId === a.id));
 
-  // เรียงลำดับ
+  // Sort
   pendingAssignments.sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime());
   finishedAssignments.sort((a, b) => {
       const resultA = examResults.find(r => r.assignmentId === a.id);
@@ -87,7 +63,6 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
       return (resultB?.timestamp || 0) - (resultA?.timestamp || 0);
   });
 
-  // ✅ Helper Function: แปลงวันที่เป็นไทย
   const formatDate = (dateString: string) => {
     if (!dateString) return '-';
     const date = new Date(dateString);
@@ -103,29 +78,19 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
   };
 
   const GRADE_LABELS: Record<string, string> = { 'P1': 'ป.1', 'P2': 'ป.2', 'P3': 'ป.3', 'P4': 'ป.4', 'P5': 'ป.5', 'P6': 'ป.6' };
-  
-  // ✅ Safe Name Access (Fix for TypeError: split is not a function)
   const safeName = student.name ? String(student.name) : 'นักเรียน';
   const studentFirstName = safeName.split(' ')[0] || safeName;
 
-  // --- ส่วนแสดงผลหน้ารายละเอียดประวัติ ---
   if (view === 'history') {
     return (
       <div className="space-y-6 pb-20 animate-fade-in">
         <button onClick={() => setView('main')} className="text-gray-500 hover:text-gray-700 flex items-center gap-1 mb-4">
           <ArrowLeft size={20} /> กลับหน้าแดชบอร์ด
         </button>
-
         <div className="flex items-center gap-3 mb-6">
-          <div className="bg-blue-100 p-3 rounded-2xl text-blue-600">
-            <History size={32} />
-          </div>
-          <div>
-            <h2 className="text-2xl font-bold text-gray-800">ประวัติการส่งงาน</h2>
-            <p className="text-gray-500">รายการการบ้านที่ทำเสร็จแล้ว ({finishedAssignments.length} รายการ)</p>
-          </div>
+          <div className="bg-blue-100 p-3 rounded-2xl text-blue-600"><History size={32} /></div>
+          <div><h2 className="text-2xl font-bold text-gray-800">ประวัติการส่งงาน</h2><p className="text-gray-500">รายการที่ทำเสร็จแล้ว ({finishedAssignments.length})</p></div>
         </div>
-
         <div className="space-y-4">
           {finishedAssignments.length > 0 ? (
             finishedAssignments.map(hw => {
@@ -135,44 +100,30 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
                    <div>
                      <div className="flex items-center gap-2 mb-1">
                         <span className="bg-blue-50 text-blue-600 text-xs font-bold px-2 py-1 rounded-lg">{hw.subject}</span>
-                        {hw.grade && hw.grade !== 'ALL' && <span className="bg-purple-100 text-purple-600 text-xs font-bold px-2 py-1 rounded-lg">{GRADE_LABELS[hw.grade] || hw.grade}</span>}
                         <span className="text-xs text-gray-400">{new Date(result?.timestamp || 0).toLocaleString('th-TH')}</span>
                      </div>
                      <div className="font-bold text-gray-800 text-lg">การบ้าน {hw.questionCount} ข้อ</div>
-                     <div className="text-sm text-gray-500">กำหนดส่งเดิม: {formatDate(hw.deadline)}</div>
-                     {hw.createdBy && <div className="text-xs text-purple-600 mt-1">ตรวจโดย: ครู{hw.createdBy}</div>}
                    </div>
-                   
                    <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end bg-gray-50 p-3 rounded-xl sm:bg-transparent sm:p-0">
                      <div className="text-right">
                         <div className="text-xs text-gray-400 font-medium uppercase">คะแนนที่ได้</div>
-                        <div className="text-2xl font-black text-blue-600 leading-none">
-                            {result ? result.score : 0}
-                            <span className="text-sm text-gray-400 font-medium">/{result ? result.totalQuestions : 0}</span>
-                        </div>
+                        <div className="text-2xl font-black text-blue-600 leading-none">{result ? result.score : 0}<span className="text-sm text-gray-400 font-medium">/{result ? result.totalQuestions : 0}</span></div>
                      </div>
-                     <div className="bg-green-100 p-2 rounded-full text-green-600">
-                        <CheckCircle size={24} />
-                     </div>
+                     <div className="bg-green-100 p-2 rounded-full text-green-600"><CheckCircle size={24} /></div>
                    </div>
                 </div>
               );
             })
           ) : (
-            <div className="text-center py-20 text-gray-400 bg-white rounded-3xl border-2 border-dashed">
-              ยังไม่มีประวัติการส่งงาน
-            </div>
+            <div className="text-center py-20 text-gray-400 bg-white rounded-3xl border-2 border-dashed">ยังไม่มีประวัติการส่งงาน</div>
           )}
         </div>
       </div>
     );
   }
 
-  // --- ส่วนแสดงผลหน้าหลัก (Dashboard) ---
   return (
     <div className="space-y-6 pb-20 relative">
-      
-      {/* 🔔 Notification Toast */}
       {notification && (
         <div className="fixed top-20 left-1/2 transform -translate-x-1/2 bg-gray-900/90 text-white px-6 py-3 rounded-full shadow-2xl z-50 animate-fade-in flex items-center gap-3">
              <Loader2 size={20} className="animate-spin text-yellow-400" />
@@ -183,12 +134,8 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
       {/* Welcome Banner */}
       <div className="bg-gradient-to-r from-pink-400 via-red-400 to-orange-400 rounded-[32px] p-6 text-white shadow-xl relative overflow-hidden border-b-8 border-orange-600/20">
         <div className="absolute top-0 right-0 opacity-10 transform translate-x-10 -translate-y-10 animate-pulse"><Star size={150} /></div>
-        <div className="absolute bottom-0 right-20 opacity-20 transform translate-y-10"><Puzzle size={100} /></div>
-        
         <div className="relative z-10 flex flex-col md:flex-row items-center gap-6">
-          <div className="text-6xl bg-white p-3 rounded-full shadow-lg border-4 border-yellow-300 transform hover:scale-110 transition duration-300 cursor-pointer">
-             {student.avatar}
-          </div>
+          <div className="text-6xl bg-white p-3 rounded-full shadow-lg border-4 border-yellow-300 transform hover:scale-110 transition duration-300 cursor-pointer">{student.avatar}</div>
           <div className="text-center md:text-left">
             <h2 className="text-3xl font-black mb-1 font-fun drop-shadow-md">สวัสดีจ้ะ, {studentFirstName}!</h2>
             <div className="flex justify-center md:justify-start gap-2 text-white/90 items-center font-bold text-sm mb-3">
@@ -205,7 +152,7 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
         </div>
       </div>
 
-      {/* 📝 กล่องการบ้านที่ต้องทำ (Pending) */}
+      {/* Pending Assignments */}
       {pendingAssignments.length > 0 ? (
         <div className="bg-white border-4 border-orange-100 rounded-3xl p-6 shadow-sm animate-fade-in relative overflow-hidden">
             <div className="absolute top-0 right-0 bg-orange-100 px-4 py-1 rounded-bl-2xl text-orange-600 font-bold text-xs">งานด่วน!</div>
@@ -222,23 +169,14 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
                                 <div className="font-bold text-gray-800 text-lg flex items-center gap-2">
                                   {hw.subject} 
                                   {isExpired && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full border border-red-200 font-bold">เลยกำหนด</span>}
-                                  {hw.grade && hw.grade !== 'ALL' && <span className="text-[10px] bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full border border-purple-200 font-bold">{GRADE_LABELS[hw.grade] || hw.grade}</span>}
                                 </div>
                                 <div className={`text-sm ${isExpired ? 'text-red-500 font-medium' : 'text-gray-500'}`}>
                                   มี {hw.questionCount} ข้อ • ส่งภายใน {formatDate(hw.deadline)}
                                 </div>
-                                {hw.createdBy && (
-                                   <div className="text-xs text-purple-500 mt-1 font-bold bg-purple-50 px-2 py-0.5 rounded w-fit">
-                                      ครู{hw.createdBy} สั่งมา
-                                   </div>
-                                )}
                             </div>
                             <button 
                                 onClick={() => handleStartWithNotification(hw)}
-                                className={`w-full sm:w-auto px-6 py-3 rounded-xl font-bold text-sm shadow-md transition-all hover:-translate-y-1 active:scale-95 border-b-4
-                                  ${isExpired 
-                                    ? 'bg-red-500 text-white hover:bg-red-600 border-red-700 active:border-b-0' 
-                                    : 'bg-orange-400 text-white hover:bg-orange-500 border-orange-600 active:border-b-0'}`}
+                                className={`w-full sm:w-auto px-6 py-3 rounded-xl font-bold text-sm shadow-md transition-all border-b-4 ${isExpired ? 'bg-red-500 text-white hover:bg-red-600 border-red-700' : 'bg-orange-400 text-white hover:bg-orange-500 border-orange-600'}`}
                             >
                                 {isExpired ? 'ส่งงานล่าช้า' : 'เริ่มทำเลย'}
                             </button>
@@ -254,66 +192,60 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
         </div>
       )}
 
-      {/* 📚 Section: Practice Topics (Main Menu) */}
+      {/* Dynamic Subject Cards */}
       <div>
         <h3 className="text-xl font-black text-gray-800 mb-4 flex items-center gap-2 font-fun ml-2">
            <BookOpen className="text-blue-500 fill-blue-500" /> บทเรียนน่ารู้ (ฝึกฝน)
         </h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            {subjects.map((sub) => (
-              <button
-                key={sub.name}
-                onClick={() => onSelectSubject(sub.id)}
-                className={`group relative p-4 md:p-6 rounded-[24px] border-b-8 transition-all duration-300 transform hover:-translate-y-1 active:translate-y-1 active:border-b-0 flex flex-col items-center gap-3 text-center ${sub.color} ${sub.shadow} bg-white`}
-              >
-                <div className="bg-white/80 p-3 rounded-full shadow-sm group-hover:scale-110 transition-transform group-hover:rotate-6">
-                  {sub.icon}
-                </div>
-                <div>
-                  <h3 className="text-base md:text-lg font-bold leading-tight">{sub.name}</h3>
-                  <p className="text-[10px] md:text-xs opacity-70 mt-1 font-medium hidden md:block">{sub.desc}</p>
-                </div>
-              </button>
-            ))}
-        </div>
+        {loadingSubjects ? <div className="text-center py-10">กำลังโหลดวิชาเรียน...</div> : (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                {displaySubjects.length > 0 ? displaySubjects.map((sub) => (
+                  <button
+                    key={sub.id}
+                    onClick={() => onSelectSubject(sub.name)}
+                    className={`group relative p-4 md:p-6 rounded-[24px] border-b-8 transition-all duration-300 transform hover:-translate-y-1 active:translate-y-1 active:border-b-0 flex flex-col items-center gap-3 text-center bg-${sub.color || 'blue'}-50 hover:bg-${sub.color || 'blue'}-100 border-${sub.color || 'blue'}-200 text-${sub.color || 'blue'}-600 bg-white`}
+                  >
+                    <div className="bg-white/80 p-3 rounded-full shadow-sm group-hover:scale-110 transition-transform group-hover:rotate-6 text-3xl">
+                      {sub.icon || '📖'}
+                    </div>
+                    <div>
+                      <h3 className="text-base md:text-lg font-bold leading-tight">{sub.name}</h3>
+                    </div>
+                  </button>
+                )) : (
+                    <div className="col-span-full text-center text-gray-400 py-10 bg-white rounded-3xl border-2 border-dashed">
+                        <p className="text-lg font-bold">ไม่พบวิชาเรียนสำหรับชั้น {GRADE_LABELS[student.grade || 'P2']}</p>
+                        <p className="text-sm">คุณครูยังไม่ได้เพิ่มวิชาเข้าระบบครับ</p>
+                    </div>
+                )}
+            </div>
+        )}
       </div>
 
-      {/* 🎮 Section: Other Activities */}
+      {/* Activities */}
       <div>
         <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2 font-fun ml-2">
             <Gamepad2 className="text-purple-500 fill-purple-500"/> สนุกกับกิจกรรม
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* ปุ่มเกมแข่งขัน */}
             <button onClick={() => onNavigate('game')} className="group relative bg-white rounded-[24px] p-5 shadow-sm hover:shadow-lg transition-all border-b-8 border-purple-200 hover:border-purple-400 active:border-b-0 active:translate-y-2 flex items-center gap-4">
               <div className="bg-purple-100 w-14 h-14 rounded-2xl flex items-center justify-center text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors"><Gamepad2 size={32} /></div>
               <div className="text-left flex-1">
-                  <h3 className="text-lg font-bold text-gray-800 group-hover:text-purple-600 transition-colors">เกมแข่งขัน</h3>
+                  <h3 className="text-lg font-bold text-gray-800 group-hover:text-purple-600">เกมแข่งขัน</h3>
                   <p className="text-gray-400 text-xs group-hover:text-purple-400">แข่งตอบคำถามกับเพื่อน</p>
               </div>
               <div className="absolute top-4 right-4 flex gap-1"><span className="flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span><span className="text-green-600 text-[10px] font-bold">LIVE</span></div>
             </button>
-
-            {/* ปุ่มดูประวัติการส่งงาน */}
             <button onClick={() => setView('history')} className="group bg-white rounded-[24px] p-5 shadow-sm hover:shadow-lg transition-all border-b-8 border-yellow-200 hover:border-yellow-400 active:border-b-0 active:translate-y-2 flex items-center gap-4">
               <div className="bg-yellow-100 w-14 h-14 rounded-2xl flex items-center justify-center text-yellow-600 group-hover:bg-yellow-500 group-hover:text-white transition-colors"><History size={28} /></div>
-              <div className="text-left">
-                  <h3 className="text-lg font-bold text-gray-800 group-hover:text-yellow-600 transition-colors">ประวัติส่งงาน</h3>
-                  <p className="text-gray-400 text-xs group-hover:text-yellow-500">งานที่ทำเสร็จแล้ว ({finishedAssignments.length})</p>
-              </div>
+              <div className="text-left"><h3 className="text-lg font-bold text-gray-800 group-hover:text-yellow-600">ประวัติส่งงาน</h3><p className="text-gray-400 text-xs group-hover:text-yellow-500">งานที่ทำเสร็จแล้ว</p></div>
             </button>
-
-            {/* ปุ่มดูสถิติ */}
             <button onClick={() => onNavigate('stats')} className="group bg-white rounded-[24px] p-5 shadow-sm hover:shadow-lg transition-all border-b-8 border-green-200 hover:border-green-400 active:border-b-0 active:translate-y-2 flex items-center gap-4">
               <div className="bg-green-100 w-14 h-14 rounded-2xl flex items-center justify-center text-green-600 group-hover:bg-green-500 group-hover:text-white transition-colors"><BarChart3 size={28} /></div>
-              <div className="text-left">
-                  <h3 className="text-lg font-bold text-gray-800 group-hover:text-green-600 transition-colors">ผลการเรียน</h3>
-                  <p className="text-gray-400 text-xs group-hover:text-green-500">เช็คดาวและคะแนน</p>
-              </div>
+              <div className="text-left"><h3 className="text-lg font-bold text-gray-800 group-hover:text-green-600">ผลการเรียน</h3><p className="text-gray-400 text-xs group-hover:text-green-500">เช็คดาวและคะแนน</p></div>
             </button>
         </div>
       </div>
-
     </div>
   );
 };

@@ -19,18 +19,35 @@ export interface Teacher {
   gradeLevel?: string; 
 }
 
-// ✅ เปลี่ยนเป็นหัวข้อภาษาไทย ป.2
-export enum Subject {
-  SPELLING = 'มาตราตัวสะกด',
-  TONES = 'การผันวรรณยุกต์',
-  CLUSTERS = 'คำควบกล้ำ',
-  ROHAN = 'คำที่มี รร',
-  RHYMES = 'คำคล้องจอง'
+// Define Subject constants for backward compatibility
+export const Subject = {
+  SPELLING: 'มาตราตัวสะกด',
+  TONES: 'การผันวรรณยุกต์',
+  CLUSTERS: 'คำควบกล้ำ',
+  ROHAN: 'คำที่มี รร',
+  RHYMES: 'คำคล้องจอง',
+  // Fallbacks for older enums if needed
+  MATH: 'คณิตศาสตร์',
+  THAI: 'ภาษาไทย',
+  SCIENCE: 'วิทยาศาสตร์',
+  ENGLISH: 'ภาษาอังกฤษ'
+} as const;
+
+// Allow Subject to be one of the constants OR any string (for custom subjects)
+export type Subject = typeof Subject[keyof typeof Subject] | string;
+
+export interface SubjectDef {
+  id: string;
+  name: string;
+  grade: string; // P1, P2, ...
+  color: string; // code for Tailwind class logic
+  icon: string; // emoji or icon name
+  school: string;
 }
 
 export interface Question {
   id: string;
-  subject: Subject;
+  subject: string; 
   text: string;
   image?: string;
   choices: {
@@ -48,7 +65,7 @@ export interface Question {
 export interface ExamResult {
   id: string;
   studentId: string;
-  subject: Subject;
+  subject: string;
   score: number;
   totalQuestions: number;
   timestamp: number;
@@ -58,7 +75,7 @@ export interface ExamResult {
 export interface Assignment {
   id: string;
   school: string;
-  subject: Subject;
+  subject: string;
   grade?: string; 
   questionCount: number;
   deadline: string; 

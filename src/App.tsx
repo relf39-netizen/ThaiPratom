@@ -47,18 +47,20 @@ const App: React.FC = () => {
           setQuestions(MOCK_QUESTIONS);
           setIsLoading(false);
         }
-      }, 2500);
+      }, 5000);
 
       try {
         const data = await fetchAppData();
         if (isMounted) {
           clearTimeout(safetyTimer);
-          if (data.students.length > 0) {
+          // Only fallback if NO students found at all (likely empty DB or fetch fail)
+          if (data.students && data.students.length > 0) {
              setStudents(data.students);
-             setQuestions(data.questions);
-             setExamResults(data.results);
-             setAssignments(data.assignments);
+             setQuestions(data.questions || []);
+             setExamResults(data.results || []);
+             setAssignments(data.assignments || []);
           } else {
+             // Fallback to Mocks
              setStudents(MOCK_STUDENTS);
              setQuestions(MOCK_QUESTIONS);
           }
@@ -150,12 +152,10 @@ const App: React.FC = () => {
   if (currentPage === 'teacher-login') return <TeacherLogin onLoginSuccess={handleTeacherLoginSuccess} onBack={() => setCurrentPage('login')} />;
   if (currentPage === 'teacher-dashboard' && currentTeacher) return <TeacherDashboard teacher={currentTeacher} onLogout={handleLogout} onStartGame={() => setCurrentPage('game-setup')} />;
   
-  // ✅ ส่ง handleGameCreated ไปให้ GameSetup
   if (currentPage === 'game-setup' && currentTeacher) return <GameSetup teacher={currentTeacher} onBack={() => setCurrentPage('teacher-dashboard')} onGameCreated={handleGameCreated} />;
   
   if (currentPage === 'teacher-game' && currentTeacher) {
       const teacherAsStudent: Student = { id: '99999', name: currentTeacher.name, school: currentTeacher.school, avatar: '👨‍🏫', stars: 0, grade: 'TEACHER' };
-      // ✅ ส่ง initialRoomCode ให้ครูเข้าห้องตัวเองได้เลย
       return <GameMode student={teacherAsStudent} initialRoomCode={gameRoomCode} onExit={() => setCurrentPage('teacher-dashboard')} />;
   }
   
@@ -165,25 +165,55 @@ const App: React.FC = () => {
     <Layout studentName={currentUser?.name} onLogout={handleLogout} isMusicOn={isMusicOn} toggleMusic={() => setIsMusicOn(!isMusicOn)} currentPage={currentPage} onNavigate={setCurrentPage}>
       {(() => {
         switch (currentPage) {
-          // ✅ Pass handleSelectSubject to Dashboard
           case 'dashboard': return <Dashboard student={currentUser!} assignments={assignments} examResults={examResults} onNavigate={setCurrentPage} onStartAssignment={handleStartAssignment} onSelectSubject={handleSelectSubject} />;
           case 'select-subject': return <SubjectSelection onSelectSubject={handleSelectSubject} onBack={() => setCurrentPage('dashboard')} />;
           case 'practice':
             let qList = questions;
-            if (currentUser) {
-                // ✅ FILTER: เฉพาะข้อสอบของโรงเรียนตัวเอง หรือ ส่วนกลาง (CENTER/Admin)
-                qList = questions.filter(q => 
-                    (q.grade === currentUser.grade || q.grade === 'ALL') &&
-                    (q.school === currentUser.school || q.school === 'CENTER' || q.school === 'Admin')
-                );
-            }
             const activeSubject = currentAssignment ? currentAssignment.subject : selectedSubject;
-            if (activeSubject) qList = qList.filter(q => q.subject === activeSubject);
-            if (currentAssignment && currentAssignment.questionCount < qList.length) qList = qList.slice(0, currentAssignment.questionCount);
+
+            if (currentUser) {
+                const sGrade = (currentUser.grade || 'P2').trim().toUpperCase();
+                const sSchool = (currentUser.school || '').trim();
+
+                // ✅ IMPROVED FILTERING LOGIC (Robust)
+                qList = questions.filter(q => {
+                    // 1. School Check: Matches Student's School OR is 'CENTER'/'Admin' OR is Blank (Global)
+                    const qSchool = (q.school || 'CENTER').trim(); 
+                    const isGlobal = qSchool.toUpperCase() === 'CENTER' || qSchool.toUpperCase() === 'ADMIN' || qSchool === '';
+                    const isMySchool = qSchool === sSchool;
+                    
+                    if (!isGlobal && !isMySchool) return false;
+
+                    // 2. Grade Check: Matches Student's Grade OR is 'ALL'
+                    const qGrade = (q.grade || 'ALL').trim().toUpperCase();
+                    // Allow ALL, allow exact match
+                    if (qGrade !== 'ALL' && qGrade !== sGrade) return false;
+
+                    // 3. Subject Check (If selected)
+                    // Normalize both strings to prevent whitespace issues
+                    if (activeSubject) {
+                        const subjA = String(activeSubject).trim();
+                        const subjB = String(q.subject).trim();
+                        if (subjA !== subjB) return false;
+                    }
+                    
+                    return true;
+                });
+            }
+
+            // ✅ Handle Assignment Limits (Shuffle & Slice)
+            if (currentAssignment) {
+                const shuffled = [...qList].sort(() => 0.5 - Math.random());
+                if (currentAssignment.questionCount > 0 && currentAssignment.questionCount < shuffled.length) {
+                    qList = shuffled.slice(0, currentAssignment.questionCount);
+                } else {
+                    qList = shuffled;
+                }
+            }
+
             return <PracticeMode questions={qList} onFinish={(s, t) => handleFinishExam(s, t, 'practice')} onBack={() => setCurrentPage('dashboard')} />;
           
           case 'game': 
-            // ✅ นักเรียนต้องกรอกรหัสเอง ไม่ส่ง initialRoomCode
             return (
                 <GameMode 
                     student={currentUser!} 

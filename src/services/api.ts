@@ -22,27 +22,37 @@ const getUrl = (params: string) => {
   return `${GOOGLE_SCRIPT_URL}${params}${separator}_t=${Date.now()}`;
 };
 
-// 🔄 Helper: Normalize Subject (Map Text from Sheet/API to Enum)
+// 🔄 Helper: Normalize Grade (e.g. "1", "ป.1", "Grade 1" -> "P1")
+const normalizeGrade = (raw: any): string => {
+  const s = String(raw).trim();
+  if (!s || s === 'undefined' || s === 'null') return 'ALL'; 
+
+  const upper = s.toUpperCase();
+  if (upper === 'ALL') return 'ALL';
+  if (upper.startsWith('TEACHER')) return 'TEACHER';
+  if (upper.startsWith('ADMIN')) return 'ADMIN';
+
+  // Extract first number found
+  const match = s.match(/\d+/);
+  if (match) {
+      const num = parseInt(match[0], 10);
+      return `P${num}`; // e.g. "1" -> "P1", "06" -> "P6"
+  }
+
+  // Fallback if no number found
+  return 'P2'; 
+};
+
+// 🔄 Helper: Normalize Subject (Return exact string for custom subjects)
 const normalizeSubject = (rawSubject: string): Subject => {
   const s = String(rawSubject).trim();
-  // Check exact matches or keywords
-  if (s.includes('สะกด') || s === 'SPELLING') return Subject.SPELLING;
-  if (s.includes('วรรณยุกต์') || s === 'TONES') return Subject.TONES;
-  if (s.includes('ควบกล้ำ') || s === 'CLUSTERS') return Subject.CLUSTERS;
-  if (s.includes('รร') || s === 'ROHAN') return Subject.ROHAN;
-  if (s.includes('คล้องจอง') || s === 'RHYMES') return Subject.RHYMES;
-  
-  return Subject.SPELLING; // Default
+  if (!s) return 'ทั่วไป';
+  return s; 
 };
 
 // 🔄 Helper: Convert Subject to Code (For sending to backend)
 const convertToCode = (subjectEnum: Subject): string => {
-    if (subjectEnum === Subject.SPELLING) return 'SPELLING';
-    if (subjectEnum === Subject.TONES) return 'TONES';
-    if (subjectEnum === Subject.CLUSTERS) return 'CLUSTERS';
-    if (subjectEnum === Subject.ROHAN) return 'ROHAN';
-    if (subjectEnum === Subject.RHYMES) return 'RHYMES';
-    return 'SPELLING';
+    return String(subjectEnum);
 };
 
 // ✅ Teacher Login
@@ -58,42 +68,6 @@ export const teacherLogin = async (username: string, password: string): Promise<
   }
 };
 
-// ✅ Get All Teachers (Admin)
-export const getAllTeachers = async (): Promise<Teacher[]> => {
-  if (!GOOGLE_SCRIPT_URL) return [];
-  try {
-    const response = await fetch(getUrl(`?type=get_teachers`));
-    const data = await response.json();
-    return Array.isArray(data) ? data : [];
-  } catch (e) {
-    console.error("Get teachers error", e);
-    return [];
-  }
-};
-
-// ✅ Manage Teacher (Admin: Add/Edit/Delete)
-export const manageTeacher = async (data: any) => {
-    if (!GOOGLE_SCRIPT_URL) return { success: false, message: 'No URL' };
-    try {
-        const params = new URLSearchParams();
-        params.append('type', 'manage_teacher');
-        
-        if (data.action) params.append('action', data.action);
-        if (data.id) params.append('id', String(data.id));
-        if (data.username) params.append('username', data.username);
-        if (data.password) params.append('password', data.password);
-        if (data.name) params.append('name', data.name);
-        if (data.school) params.append('school', data.school);
-        if (data.role) params.append('role', data.role);
-        if (data.gradeLevel) params.append('gradeLevel', data.gradeLevel);
-        
-        const response = await fetch(getUrl(`?${params.toString()}`));
-        return await response.json();
-    } catch (e) {
-        return { success: false, message: 'Connection Error' };
-    }
-};
-
 // ✅ Manage Student (Add/Edit/Delete)
 export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', id?: string, name?: string, school?: string, avatar?: string, grade?: string, teacherId?: string }): Promise<{success: boolean, student?: Student, message?: string, rawError?: boolean}> => {
   if (!GOOGLE_SCRIPT_URL) return { success: false, message: 'No URL' };
@@ -107,7 +81,7 @@ export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', i
     if (data.name) params.append('name', String(data.name));
     if (data.school) params.append('school', String(data.school));
     if (data.avatar) params.append('avatar', String(data.avatar));
-    if (data.grade) params.append('grade', String(data.grade));
+    if (data.grade) params.append('grade', normalizeGrade(data.grade)); 
     if (data.teacherId) params.append('teacherId', String(data.teacherId));
     
     const response = await fetch(getUrl(`?${params.toString()}`));
@@ -118,7 +92,7 @@ export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', i
         if (data.action === 'add' && result.success && !result.student && result.id) {
              return { 
                  success: true, 
-                 student: { id: result.id, name: result.name, school: result.school, avatar: result.avatar, stars: 0, grade: result.grade, teacherId: result.teacherId } 
+                 student: { id: result.id, name: result.name, school: result.school, avatar: result.avatar, stars: 0, grade: normalizeGrade(result.grade), teacherId: result.teacherId } 
              };
         }
         return result;
@@ -132,9 +106,9 @@ export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', i
   }
 };
 
-// ✅ Add New Student (Legacy Wrapper) - Default to P2
+// ✅ Add New Student (Legacy Wrapper)
 export const addStudent = async (name: string, school: string, avatar: string, grade: string = 'P2', teacherId?: string): Promise<Student | null> => {
-  const result = await manageStudent({ action: 'add', name, school, avatar, grade, teacherId });
+  const result = await manageStudent({ action: 'add', name, school, avatar, grade: normalizeGrade(grade), teacherId });
   if (result.success && result.student) {
       return result.student;
   }
@@ -156,14 +130,14 @@ export const getTeacherDashboard = async (school: string) => {
       ...q,
       id: String(q.id).trim(),
       text: String(q.text || ''), 
-      subject: normalizeSubject(q.subject),
+      subject: normalizeSubject(q.subject), 
       choices: q.choices.map((c: any) => ({ 
           ...c, 
           id: String(c.id), 
           text: String(c.text || '') 
       })),
       correctChoiceId: String(q.correctChoiceId),
-      grade: q.grade || 'ALL',
+      grade: normalizeGrade(q.grade || 'ALL'),
       school: q.school || 'CENTER',
       teacherId: q.teacherId ? String(q.teacherId) : undefined
     }));
@@ -171,6 +145,7 @@ export const getTeacherDashboard = async (school: string) => {
     const cleanStudents = (data.students || []).map((s: any) => ({
       ...s,
       id: String(s.id).trim(),
+      grade: normalizeGrade(s.grade),
       teacherId: s.teacherId ? String(s.teacherId) : undefined
     }));
 
@@ -178,7 +153,7 @@ export const getTeacherDashboard = async (school: string) => {
       id: String(a.id),
       school: String(a.school),
       subject: normalizeSubject(a.subject),
-      grade: a.grade || 'ALL', 
+      grade: normalizeGrade(a.grade || 'ALL'), 
       questionCount: Number(a.questionCount),
       deadline: String(a.deadline).split('T')[0],
       createdBy: String(a.createdBy)
@@ -197,16 +172,17 @@ export const addQuestion = async (question: any): Promise<boolean> => {
     const subjectCode = convertToCode(question.subject);
     const params = new URLSearchParams({
       type: 'add_question',
-      subject: subjectCode,
+      subject: subjectCode, 
       text: question.text,
       image: question.image || '',
       c1: question.c1, c2: question.c2, c3: question.c3, c4: question.c4,
       correct: question.correct,
       explanation: question.explanation,
-      grade: 'P2', // Force P2
+      grade: normalizeGrade(question.grade || 'P2'), // Normalize grade on save
       school: question.school || '',
       teacherId: question.teacherId || ''
     });
+
     await fetch(getUrl(`?${params.toString()}`));
     return true;
   } catch (e) {
@@ -228,8 +204,9 @@ export const editQuestion = async (question: any): Promise<boolean> => {
       c1: question.c1, c2: question.c2, c3: question.c3, c4: question.c4,
       correct: question.correct,
       explanation: question.explanation,
-      grade: 'P2' // Force P2
+      grade: normalizeGrade(question.grade || 'P2')
     });
+    
     const response = await fetch(getUrl(`?${params.toString()}`));
     const result = await response.json();
     return result.success;
@@ -262,7 +239,7 @@ export const addAssignment = async (school: string, subject: string, grade: stri
         type: 'add_assignment',
         school,
         subject,
-        grade: 'P2', // Force P2
+        grade: normalizeGrade(grade || 'P2'), 
         questionCount: String(questionCount),
         deadline,
         createdBy
@@ -317,23 +294,24 @@ export const fetchAppData = async (): Promise<AppData> => {
     const data = JSON.parse(textData);
     
     const cleanStudents = (data.students || []).map((s: any) => ({
-      ...s, id: String(s.id).trim(), stars: Number(s.stars) || 0, grade: s.grade || 'P2',
+      ...s, id: String(s.id).trim(), stars: Number(s.stars) || 0, grade: normalizeGrade(s.grade),
       teacherId: s.teacherId ? String(s.teacherId) : undefined
     }));
     
+    // Updated: Ensure question has a school property even if missing in JSON
     const cleanQuestions = (data.questions || []).map((q: any) => ({
       ...q, 
       id: String(q.id).trim(), 
       text: String(q.text || ''), 
-      subject: normalizeSubject(q.subject),
+      subject: normalizeSubject(q.subject), 
       choices: q.choices.map((c: any) => ({ 
           ...c, 
           id: String(c.id),
           text: String(c.text || '') 
       })),
       correctChoiceId: String(q.correctChoiceId),
-      grade: q.grade || 'ALL',
-      school: q.school || 'CENTER',
+      grade: normalizeGrade(q.grade || 'ALL'), // Force normalize grade
+      school: q.school || 'CENTER', 
       teacherId: q.teacherId ? String(q.teacherId) : undefined
     }));
 
@@ -351,7 +329,7 @@ export const fetchAppData = async (): Promise<AppData> => {
       id: String(a.id), 
       school: String(a.school), 
       subject: normalizeSubject(a.subject),
-      grade: a.grade || 'ALL', 
+      grade: normalizeGrade(a.grade || 'ALL'), 
       questionCount: Number(a.questionCount), 
       deadline: String(a.deadline).split('T')[0], 
       createdBy: String(a.createdBy)
