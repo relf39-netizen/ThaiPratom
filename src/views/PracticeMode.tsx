@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { Question, Subject } from '../types';
-import { CheckCircle, XCircle, ArrowRight, RefreshCw, ArrowLeft, Volume2 } from 'lucide-react';
+import { Question } from '../types';
+import { CheckCircle, XCircle, ArrowRight, ArrowLeft, Volume2, Loader2 } from 'lucide-react';
 import { speak } from '../utils/soundUtils';
 
 interface PracticeModeProps {
@@ -19,21 +19,64 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
   const [loading, setLoading] = useState(true);
 
   const choiceLabels = ['A', 'B', 'C', 'D']; 
+  const normalizeId = (id: any) => String(id).trim();
 
   useEffect(() => {
-    // กระบวนการเตรียมข้อสอบ: สุ่มโจทย์ + ตัดเหลือ 10 ข้อ + สลับช้อยส์
+    // กระบวนการเตรียมข้อสอบ: สุ่มโจทย์ + ตัดเหลือ 10 ข้อ + สลับช้อยส์ + Sanitize IDs
     if (allQuestions && allQuestions.length > 0) {
+        setLoading(true);
+
         // 1. สุ่มลำดับโจทย์ทั้งหมดก่อน (Shuffle Questions)
         const shuffledQuestions = [...allQuestions].sort(() => 0.5 - Math.random());
 
-        // 2. ตัดมาแค่ 10 ข้อ (หรือน้อยกว่าถ้าในคลังมีไม่ถึง 10 ข้อ)
+        // 2. ตัดมาแค่ 10 ข้อ
         const limitedQuestions = shuffledQuestions.slice(0, 10);
 
-        // 3. สลับตำแหน่งตัวเลือกในแต่ละข้อ (Shuffle Choices)
-        const finalQuestions = limitedQuestions.map(q => ({
-            ...q,
-            choices: [...q.choices].sort(() => 0.5 - Math.random())
-        }));
+        // 3. ตรวจสอบ ID และสลับตำแหน่งตัวเลือก (Shuffle Choices)
+        const finalQuestions = limitedQuestions.map(q => {
+            // Ensure choices have valid IDs
+            const safeChoices = q.choices.map((c, idx) => ({
+                ...c,
+                id: c.id ? normalizeId(c.id) : `gen_choice_${idx}`
+            }));
+
+            // Normalize Correct Choice ID
+            let correctId = normalizeId(q.correctChoiceId);
+            
+            // ตรวจสอบว่า ID เฉลยมีอยู่ในตัวเลือกหรือไม่
+            const exists = safeChoices.some(c => c.id === correctId);
+
+            if (!exists) {
+                // พยายาม Mapping จาก Index หรือ ตัวอักษร
+                const numeric = parseInt(correctId);
+                if (!isNaN(numeric) && numeric >= 1 && numeric <= safeChoices.length) {
+                    correctId = safeChoices[numeric - 1].id;
+                } else {
+                    const map: Record<string, number> = { 
+                        'A':0, 'B':1, 'C':2, 'D':3, 
+                        'a':0, 'b':1, 'c':2, 'd':3,
+                        'ก':0, 'ข':1, 'ค':2, 'ง':3 
+                    };
+                    const key = correctId.toUpperCase().replace('.', '');
+                    if (map[key] !== undefined && map[key] < safeChoices.length) {
+                         correctId = safeChoices[map[key]].id;
+                    } else if (safeChoices.length > 0) {
+                        // Fallback: ถ้าหาไม่เจอจริงๆ ให้ใช้ข้อแรกเป็นข้อถูก (กัน Error)
+                        correctId = safeChoices[0].id;
+                        console.warn(`Question ID ${q.id} has invalid correctChoiceId: ${q.correctChoiceId}. Defaulting to first choice.`);
+                    }
+                }
+            }
+
+            // Shuffle choices
+            const shuffledChoices = [...safeChoices].sort(() => 0.5 - Math.random());
+
+            return {
+                ...q,
+                choices: shuffledChoices,
+                correctChoiceId: correctId
+            };
+        });
 
         setQuestions(finalQuestions);
         setLoading(false);
@@ -74,14 +117,19 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
   };
 
   if (loading) {
-    return <div className="flex justify-center items-center h-64 text-blue-500 font-bold text-xl animate-pulse">กำลังเตรียมชุดข้อสอบ 10 ข้อ...</div>;
+    return (
+        <div className="flex flex-col justify-center items-center h-[60vh] text-blue-500">
+            <Loader2 className="animate-spin mb-4" size={48}/>
+            <p className="font-bold text-xl animate-pulse">กำลังเตรียมชุดข้อสอบ...</p>
+        </div>
+    );
   }
 
   if (questions.length === 0) {
     return (
-        <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+        <div className="flex flex-col items-center justify-center h-[60vh] text-gray-500">
             <p className="text-xl font-bold mb-4">ไม่พบข้อมูลข้อสอบ</p>
-            <button onClick={onBack} className="bg-blue-500 text-white px-4 py-2 rounded-lg">กลับหน้าหลัก</button>
+            <button onClick={onBack} className="bg-blue-500 text-white px-6 py-2 rounded-xl font-bold hover:bg-blue-600 transition">กลับหน้าหลัก</button>
         </div>
     );
   }
@@ -129,22 +177,22 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
       </div>
 
       {/* Question Card */}
-      <div className="bg-white rounded-3xl shadow-lg p-6 md:p-8 mb-6 border-b-4 border-gray-200 relative overflow-hidden">
+      <div className="bg-white rounded-[32px] shadow-lg p-6 md:p-8 mb-6 border-b-4 border-gray-200 relative overflow-hidden">
         <div className="inline-block bg-blue-100 text-blue-700 text-xs font-bold px-3 py-1 rounded-full mb-3">
           {currentQuestion.subject}
         </div>
         
-        <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-4 leading-relaxed font-fun">
+        <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-6 leading-relaxed font-fun">
           {currentQuestion.text}
         </h2>
 
         {currentQuestion.image && (
-          <div className="mb-6 rounded-2xl overflow-hidden border-2 border-gray-100">
-            <img src={currentQuestion.image} alt="Question" className="w-full h-auto object-contain max-h-60 bg-gray-50" />
+          <div className="mb-6 rounded-2xl overflow-hidden border-2 border-gray-100 bg-gray-50">
+            <img src={currentQuestion.image} alt="Question" className="w-full h-auto object-contain max-h-60" />
           </div>
         )}
 
-        <div className="space-y-4">
+        <div className="space-y-3">
           {currentQuestion.choices.map((choice, index) => {
             const colorTheme = choiceColors[index % 4];
             const label = choiceLabels[index] || (index + 1).toString();
@@ -159,13 +207,13 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
 
             if (isSubmitted) {
               if (choice.id === currentQuestion.correctChoiceId) {
-                buttonStyle = "border-2 border-green-500 bg-green-100 text-green-900 shadow-md scale-[1.02]";
+                buttonStyle = "border-2 border-green-500 bg-green-100 text-green-900 shadow-md scale-[1.02] !opacity-100";
                 badgeStyle = "bg-green-500 text-white border-transparent";
               } else if (choice.id === selectedChoice) {
                 buttonStyle = "border-2 border-red-500 bg-red-100 text-red-900 opacity-80";
                 badgeStyle = "bg-red-500 text-white border-transparent";
               } else {
-                buttonStyle = "border-2 border-gray-100 bg-gray-50 text-gray-400 opacity-50 grayscale";
+                buttonStyle = "border-2 border-gray-100 bg-gray-50 text-gray-400 opacity-40 grayscale";
                 badgeStyle = "bg-gray-200 text-gray-400";
               }
             }
@@ -175,7 +223,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
                 key={choice.id}
                 onClick={() => handleChoiceSelect(choice.id)}
                 disabled={isSubmitted}
-                className={`w-full p-3 md:p-4 rounded-3xl text-left text-lg ${buttonStyle}`}
+                className={`w-full p-3 md:p-4 rounded-3xl text-left text-lg ${buttonStyle} active:scale-95`}
               >
                 {/* Label Circle A, B, C, D */}
                 <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg transition-colors ${badgeStyle}`}>
@@ -206,7 +254,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
       </div>
 
       {/* Footer Actions */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 md:static md:bg-transparent md:border-0 md:p-0 z-20">
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur border-t border-gray-200 md:static md:bg-transparent md:border-0 md:p-0 z-20">
         <div className="max-w-3xl mx-auto">
           {!isSubmitted ? (
             <button
@@ -214,7 +262,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
               disabled={!selectedChoice}
               className={`w-full py-4 rounded-2xl font-bold text-xl shadow-lg transition-all transform active:scale-95 ${
                 selectedChoice 
-                  ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200' 
+                  ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200 hover:from-blue-600 hover:to-blue-700' 
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
               }`}
             >
@@ -238,7 +286,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
               </div>
               <button
                 onClick={handleNext}
-                className="w-full py-4 rounded-2xl font-bold text-xl shadow-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 transition-all flex items-center justify-center gap-2 shadow-blue-200"
+                className="w-full py-4 rounded-2xl font-bold text-xl shadow-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 transition-all flex items-center justify-center gap-2 shadow-blue-200 active:scale-95"
               >
                 {currentIndex < questions.length - 1 ? 'ข้อต่อไป' : 'ดูผลลัพธ์'} <ArrowRight size={24} />
               </button>
@@ -251,3 +299,4 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
 };
 
 export default PracticeMode;
+    
