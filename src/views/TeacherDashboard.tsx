@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { Teacher, Student, Subject, Assignment, Question } from '../types';
-import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, ChevronLeft, ChevronRight, Puzzle, Music, Users, Trees, Link as LinkIcon, ArrowLeft, GraduationCap, Trash2, Edit, Shield, UserCog, KeyRound, Sparkles, Wand2, Key, HelpCircle } from 'lucide-react';
+import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, ChevronLeft, ChevronRight, Puzzle, Music, Users, Trees, Link as LinkIcon, ArrowLeft, GraduationCap, Trash2, Edit, Shield, UserCog, KeyRound, Sparkles, Wand2, Key, HelpCircle, FolderOpen, Plus, FilePlus, Clock, ChevronRightCircle, AlertTriangle } from 'lucide-react';
 import { getTeacherDashboard, manageStudent, addAssignment, addQuestion, editQuestion, manageTeacher, getAllTeachers, GOOGLE_SCRIPT_URL, deleteQuestion, deleteAssignment } from '../services/api';
-import { generateQuestionWithAI } from '../services/aiService';
+import { generateQuestionWithAI, GeneratedQuestion } from '../services/aiService.ts';
 
 interface TeacherDashboardProps {
   teacher: Teacher;
@@ -12,6 +12,19 @@ interface TeacherDashboardProps {
 }
 
 const ADD_QUESTION_URL = GOOGLE_SCRIPT_URL;
+
+const GRADE_OPTIONS = [
+    { value: 'P1', label: 'ป.1', color: 'bg-red-50 text-red-700 border-red-200' },
+    { value: 'P2', label: 'ป.2', color: 'bg-blue-50 text-blue-700 border-blue-200' },
+    { value: 'P3', label: 'ป.3', color: 'bg-green-50 text-green-700 border-green-200' },
+    { value: 'P4', label: 'ป.4', color: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
+    { value: 'P5', label: 'ป.5', color: 'bg-purple-50 text-purple-700 border-purple-200' },
+    { value: 'P6', label: 'ป.6', color: 'bg-orange-50 text-orange-700 border-orange-200' },
+];
+
+const GRADE_LABELS: Record<string, string> = { 
+    'P1': 'ป.1', 'P2': 'ป.2', 'P3': 'ป.3', 'P4': 'ป.4', 'P5': 'ป.5', 'P6': 'ป.6' 
+};
 
 const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, onStartGame }) => {
   const [activeTab, setActiveTab] = useState<'menu' | 'students' | 'stats' | 'questions' | 'assignments' | 'teachers' | 'profile'>('menu');
@@ -34,15 +47,21 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   // Student Form & Management State
   const [newStudentName, setNewStudentName] = useState('');
   const [newStudentAvatar, setNewStudentAvatar] = useState('👦');
+  const [newStudentGrade, setNewStudentGrade] = useState('P2'); // Default grade
   const [createdStudent, setCreatedStudent] = useState<Student | null>(null);
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
+  
+  // Grade List Modal State
+  const [showGradeModal, setShowGradeModal] = useState(false);
+  const [viewingGrade, setViewingGrade] = useState('');
+  const [studentsInGrade, setStudentsInGrade] = useState<Student[]>([]);
   
   // 🔥 Processing UI State
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingMessage, setProcessingMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
-  // Assignment Form
+  // Assignment Form (Manual) - kept for internal state but UI replaced by AI
   const [assignSubject, setAssignSubject] = useState<Subject>(Subject.SPELLING);
   const [assignCount, setAssignCount] = useState(10);
   const [assignDeadline, setAssignDeadline] = useState('');
@@ -60,9 +79,15 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [showAiModal, setShowAiModal] = useState(false);
   const [showAiHelp, setShowAiHelp] = useState(false); 
   const [aiTopic, setAiTopic] = useState('');
-  const [aiCount, setAiCount] = useState<number>(1); 
+  const [aiInstructions, setAiInstructions] = useState(''); // New State for instructions
+  const [aiGrade, setAiGrade] = useState('P2');
   const [geminiApiKey, setGeminiApiKey] = useState('');
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+  const [draftQuestions, setDraftQuestions] = useState<GeneratedQuestion[]>([]);
+  
+  // AI Assignment Options
+  const [aiCreateAssignment, setAiCreateAssignment] = useState(false);
+  const [aiDeadline, setAiDeadline] = useState('');
 
   // Question Bank State
   const [qBankSubject, setQBankSubject] = useState<Subject | null>(null); 
@@ -72,6 +97,21 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
 
   // Modal State
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
+
+  // 🔥 DELETE MODAL STATE
+  const [deleteModal, setDeleteModal] = useState<{
+      isOpen: boolean;
+      title: string;
+      message: string;
+      targetId: string;
+      type: 'STUDENT' | 'ASSIGNMENT' | 'QUESTION' | 'TEACHER';
+  }>({
+      isOpen: false,
+      title: '',
+      message: '',
+      targetId: '',
+      type: 'STUDENT'
+  });
 
   const isAdmin = (teacher.role && teacher.role.toUpperCase() === 'ADMIN') || (teacher.username && teacher.username.toLowerCase() === 'admin');
 
@@ -216,22 +256,109 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       setIsProcessing(false);
   };
 
-  const handleDeleteTeacher = async (id: number | string) => {
-      if (!confirm('ต้องการลบรายชื่อครูท่านนี้ใช่หรือไม่?')) return;
-      setIsProcessing(true);
-      setProcessingMessage('กำลังลบข้อมูลครู...');
-      try {
-          const res = await manageTeacher({ id: String(id), action: 'delete' });
-          if (res.success) {
-              alert('ลบสำเร็จ');
-              loadTeachers();
-          } else {
-              alert('ลบไม่สำเร็จ');
-          }
-      } catch(e) {
-          alert('เชื่อมต่อไม่สำเร็จ');
+  const openDeleteModal = (targetId: string, type: 'STUDENT' | 'ASSIGNMENT' | 'QUESTION' | 'TEACHER') => {
+      let title = '';
+      let message = '';
+      
+      switch (type) {
+          case 'STUDENT': 
+            title = 'ยืนยันลบนักเรียน'; 
+            message = 'คุณต้องการลบข้อมูลนักเรียนคนนี้ใช่หรือไม่? ข้อมูลคะแนนจะหายไปด้วย'; 
+            break;
+          case 'ASSIGNMENT': 
+            title = 'ยืนยันลบการบ้าน'; 
+            message = 'คุณต้องการลบการบ้านนี้ใช่หรือไม่? ข้อมูลการส่งงานของนักเรียนในหัวข้อนี้จะถูกลบทั้งหมด'; 
+            break;
+          case 'QUESTION': 
+            title = 'ยืนยันลบข้อสอบ'; 
+            message = 'คุณต้องการลบข้อสอบข้อนี้ออกจากคลังข้อสอบใช่หรือไม่?'; 
+            break;
+          case 'TEACHER': 
+            title = 'ยืนยันลบข้อมูลครู'; 
+            message = 'คุณต้องการลบรายชื่อครูท่านนี้ใช่หรือไม่?'; 
+            break;
       }
-      setIsProcessing(false);
+
+      setDeleteModal({
+          isOpen: true,
+          title,
+          message,
+          targetId,
+          type
+      });
+  };
+
+  const handleConfirmDelete = async () => {
+      const { targetId, type } = deleteModal;
+      setDeleteModal({ ...deleteModal, isOpen: false }); // Close modal
+
+      if (type === 'TEACHER') {
+          setIsProcessing(true);
+          setProcessingMessage('กำลังลบข้อมูลครู...');
+          try {
+              const res = await manageTeacher({ id: targetId, action: 'delete' });
+              if (res.success) {
+                  alert('ลบสำเร็จ');
+                  loadTeachers();
+              } else {
+                  alert('ลบไม่สำเร็จ');
+              }
+          } catch(e) {
+              alert('เชื่อมต่อไม่สำเร็จ');
+          }
+          setIsProcessing(false);
+      } 
+      else if (type === 'STUDENT') {
+          setIsProcessing(true);
+          setProcessingMessage('กำลังลบข้อมูลออกจากฐานข้อมูล...');
+          await manageStudent({ action: 'delete', id: targetId });
+          setProcessingMessage('กำลังยืนยันการลบกับ Google Sheet...');
+          const updatedStudents = await verifyDataChange((list) => {
+              return !list.some(s => s.id === targetId);
+          });
+          setIsProcessing(false);
+          
+          const filterFunc = (prev: Student[]) => prev.filter(s => s.id !== targetId);
+          
+          if (updatedStudents) {
+              const myStudents = updatedStudents.filter(s => s.school === teacher.school);
+              setStudents(myStudents);
+              setStudentsInGrade(filterFunc(studentsInGrade)); // Update modal list
+              alert('✅ ลบข้อมูลสำเร็จ');
+          } else {
+              setStudents(filterFunc);
+              setStudentsInGrade(filterFunc(studentsInGrade)); // Update modal list
+              alert('✅ ลบข้อมูลเรียบร้อย (กำลังซิงค์ข้อมูลเบื้องหลัง)');
+          }
+      }
+      else if (type === 'ASSIGNMENT') {
+          setIsProcessing(true);
+          setProcessingMessage('กำลังลบการบ้าน...');
+          const success = await deleteAssignment(targetId);
+          setIsProcessing(false); 
+
+          if (success) {
+              alert('✅ ลบการบ้านสำเร็จ');
+              setAssignments(prev => prev.filter(a => a.id !== targetId)); 
+              loadData(); 
+          } else {
+              alert('❌ ลบไม่สำเร็จ (อาจเป็นปัญหาที่ระบบ Google Script)');
+          }
+      }
+      else if (type === 'QUESTION') {
+          setIsProcessing(true);
+          setProcessingMessage('กำลังลบข้อสอบ...');
+          const success = await deleteQuestion(targetId);
+          setIsProcessing(false); 
+          
+          if (success) {
+              alert('✅ ลบข้อสอบสำเร็จ');
+              setQuestions(prev => prev.filter(q => q.id !== targetId)); 
+              loadData(); 
+          } else {
+              alert('❌ ลบไม่สำเร็จ');
+          }
+      }
   };
 
   const handleEditTeacher = (t: Teacher) => {
@@ -245,6 +372,13 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
           gradeLevel: 'P2'
       });
       setIsEditingTeacher(true);
+  };
+
+  const handleViewGradeStudents = (grade: string) => {
+      const filtered = students.filter(s => (s.grade || 'P2') === grade);
+      setViewingGrade(grade);
+      setStudentsInGrade(filtered);
+      setShowGradeModal(true);
   };
 
   const handleSaveStudent = async () => {
@@ -261,14 +395,14 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             name: newStudentName,
             school: teacher.school,
             avatar: newStudentAvatar,
-            grade: 'P2',
+            grade: newStudentGrade,
             teacherId: currentTeacherId
         });
 
         setProcessingMessage('กำลังยืนยันข้อมูลกับ Google Sheet...');
         const updatedStudents = await verifyDataChange((list) => {
             const target = list.find(s => s.id === editingStudentId);
-            return target !== undefined && target.name === newStudentName;
+            return target !== undefined && target.name === newStudentName && target.grade === newStudentGrade;
         });
 
         setIsProcessing(false);
@@ -278,11 +412,16 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             setStudents(myStudents);
             alert('✅ แก้ไขข้อมูลสำเร็จ');
         } else {
-            setStudents(prev => prev.map(s => s.id === editingStudentId ? { ...s, name: newStudentName, avatar: newStudentAvatar, grade: 'P2', teacherId: currentTeacherId } : s));
+            setStudents(prev => prev.map(s => s.id === editingStudentId ? { ...s, name: newStudentName, avatar: newStudentAvatar, grade: newStudentGrade, teacherId: currentTeacherId } : s));
             alert('✅ บันทึกข้อมูลแล้ว (กำลังซิงค์ข้อมูลเบื้องหลัง)');
         }
         
         handleCancelEdit();
+        
+        // Refresh modal if open
+        if (showGradeModal && viewingGrade) {
+            handleViewGradeStudents(viewingGrade);
+        }
         return;
     }
 
@@ -305,7 +444,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             name: newStudentName, 
             school: teacher.school, 
             avatar: newStudentAvatar, 
-            grade: 'P2', 
+            grade: newStudentGrade, 
             teacherId: currentTeacherId
         });
         
@@ -314,7 +453,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             setStudents(prev => [...prev, res.student!]); 
             setNewStudentName('');
         } else {
-            // Verification fallback if API ID differs or success logic varies
+            // Verification fallback
             const foundAdded = await verifyDataChange((list) => {
                 return list.some(s => s.name === newStudentName);
             });
@@ -330,13 +469,13 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                      alert('บันทึกไม่สำเร็จ: ' + (res.message || 'ไม่ทราบสาเหตุ'));
                 }
             } else {
-                // Optimistic UI Update if API returns generic success
+                // Optimistic UI Update
                 const tempStudent: Student = { 
                     id: studentIdToSave, 
                     name: newStudentName, 
                     school: teacher.school, 
                     avatar: newStudentAvatar, 
-                    grade: 'P2', 
+                    grade: newStudentGrade, 
                     stars: 0 
                 };
                 setCreatedStudent(tempStudent);
@@ -344,6 +483,12 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 setNewStudentName('');
             }
         }
+        
+        // Refresh modal if open
+        if (showGradeModal && viewingGrade) {
+             const updatedList = [...students]; 
+        }
+
     } catch(e) {
          alert('เชื่อมต่อไม่สำเร็จ: ' + e);
     } finally {
@@ -352,70 +497,22 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   };
 
   const handleEditStudent = (s: Student) => {
+      // Close modal first if open
+      setShowGradeModal(false);
+      
       setEditingStudentId(s.id);
       setNewStudentName(s.name);
       setNewStudentAvatar(s.avatar);
+      setNewStudentGrade(s.grade || 'P2');
       const formElement = document.getElementById('student-form');
       if(formElement) formElement.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const handleDeleteStudent = async (id: string) => {
-      if (!confirm('ยืนยันการลบนักเรียนคนนี้ใช่หรือไม่?')) return;
-      setIsProcessing(true);
-      setProcessingMessage('กำลังลบข้อมูลออกจากฐานข้อมูล...');
-      await manageStudent({ action: 'delete', id });
-      setProcessingMessage('กำลังยืนยันการลบกับ Google Sheet...');
-      const updatedStudents = await verifyDataChange((list) => {
-          return !list.some(s => s.id === id);
-      });
-      setIsProcessing(false);
-      if (updatedStudents) {
-          const myStudents = updatedStudents.filter(s => s.school === teacher.school);
-          setStudents(myStudents);
-          alert('✅ ลบข้อมูลสำเร็จ');
-      } else {
-          setStudents(prev => prev.filter(s => s.id !== id));
-          alert('✅ ลบข้อมูลเรียบร้อย (กำลังซิงค์ข้อมูลเบื้องหลัง)');
-      }
   };
 
   const handleCancelEdit = () => {
       setEditingStudentId(null);
       setNewStudentName('');
       setNewStudentAvatar('👦');
-  };
-
-  const handleCreateAssignment = async () => {
-    if (!assignDeadline) return alert('กรุณาเลือกวันกำหนดส่ง');
-    setIsProcessing(true);
-    setProcessingMessage('กำลังบันทึกการบ้าน...');
-    
-    const success = await addAssignment(teacher.school, assignSubject, 'P2', assignCount, assignDeadline, teacher.name);
-    
-    if (success) { 
-        alert('✅ สั่งการบ้านเรียบร้อยแล้ว'); 
-        setAssignDeadline(''); 
-        await loadData(); 
-    } else { 
-        alert('เกิดข้อผิดพลาด'); 
-    }
-    setIsProcessing(false);
-  };
-
-  const handleDeleteAssignment = async (id: string) => {
-      if (!confirm('ยืนยันลบการบ้านนี้หรือไม่? ข้อมูลคะแนนของนักเรียนในงานนี้จะถูกลบไปด้วย')) return;
-      setIsProcessing(true);
-      setProcessingMessage('กำลังลบการบ้าน...');
-      const success = await deleteAssignment(id);
-      setIsProcessing(false); 
-
-      if (success) {
-          alert('✅ ลบการบ้านสำเร็จ');
-          setAssignments(prev => prev.filter(a => a.id !== id)); 
-          loadData(); 
-      } else {
-          alert('❌ ลบไม่สำเร็จ (อาจเป็นปัญหาที่ระบบ Google Script)');
-      }
+      setNewStudentGrade('P2');
   };
   
   const handleEditQuestion = (q: Question) => {
@@ -488,77 +585,18 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
     }
   };
 
-  const handleDeleteQuestion = async (id: string) => {
-      if (!confirm('ยืนยันลบข้อสอบข้อนี้หรือไม่?')) return;
-      setIsProcessing(true);
-      setProcessingMessage('กำลังลบข้อสอบ...');
-      const success = await deleteQuestion(id);
-      setIsProcessing(false); 
-      
-      if (success) {
-          alert('✅ ลบข้อสอบสำเร็จ');
-          setQuestions(prev => prev.filter(q => q.id !== id)); 
-          loadData(); 
-      } else {
-          alert('❌ ลบไม่สำเร็จ');
-      }
-  };
-
   const handleAiGenerate = async () => {
     if (!geminiApiKey) return alert("กรุณากรอก Gemini API Key ของท่าน");
-    if (!aiTopic) return alert("กรุณาระบุเรื่องที่ต้องการออกข้อสอบ");
+    if (aiCreateAssignment && !aiTopic) return alert("กรุณาระบุหัวข้อแบบฝึกหัด (ชื่อการบ้าน)");
     localStorage.setItem('gemini_api_key', geminiApiKey);
 
     setIsGeneratingAi(true);
     try {
-        const results = await generateQuestionWithAI(qSubject, 'P2', aiTopic, geminiApiKey, aiCount);
+        // Generate 5 questions at a time
+        const results = await generateQuestionWithAI(qSubject, aiGrade, aiInstructions, geminiApiKey, 5);
         
         if (results && results.length > 0) {
-            
-            if (aiCount === 1) {
-                const result = results[0];
-                setQText(result.text);
-                setQChoices({ c1: result.c1, c2: result.c2, c3: result.c3, c4: result.c4 });
-                setQCorrect(result.correct);
-                setQExplain(result.explanation || ''); // Handle optional explanation
-                setQImage(result.image || ''); 
-                
-                alert("✨ สร้างโจทย์สำเร็จ! \n\nข้อมูลได้ถูกกรอกลงในแบบฟอร์มแล้ว \nท่านสามารถแก้ไข/ปรับปรุงโจทย์ได้ตามต้องการ ก่อนกด 'บันทึกข้อสอบ' ครับ");
-            } else {
-                const tid = normalizeId(teacher.id);
-                if (!tid) {
-                    alert('คำเตือน: ไม่พบ ID ครู ระบบจะบันทึกโดยไม่มีเจ้าของ');
-                }
-
-                setIsGeneratingAi(false); 
-                setIsProcessing(true);
-                setProcessingMessage(`กำลังบันทึกข้อสอบ 0/${results.length}...`);
-
-                let successCount = 0;
-                for (let i = 0; i < results.length; i++) {
-                    const q = results[i];
-                    setProcessingMessage(`กำลังบันทึกข้อสอบ ${i + 1}/${results.length}...`);
-                    await addQuestion({
-                        subject: qSubject,
-                        grade: 'P2',
-                        text: q.text,
-                        image: q.image || '', 
-                        c1: q.c1, c2: q.c2, c3: q.c3, c4: q.c4,
-                        correct: q.correct,
-                        explanation: q.explanation || '',
-                        school: teacher.school,
-                        teacherId: tid
-                    });
-                    successCount++;
-                }
-                
-                setIsProcessing(false);
-                alert(`✅ บันทึกข้อสอบ ${successCount} ข้อเรียบร้อยแล้ว!`);
-                await loadData();
-            }
-
-            setShowAiModal(false);
-            setAiTopic('');
+            setDraftQuestions(prev => [...prev, ...results]);
         } else {
             alert("ไม่สามารถสร้างโจทย์ได้ในขณะนี้ กรุณาลองใหม่ หรือตรวจสอบ API Key");
         }
@@ -566,8 +604,77 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         alert("เกิดข้อผิดพลาดในการเชื่อมต่อ AI: " + e.message);
     } finally {
         setIsGeneratingAi(false);
-        setIsProcessing(false);
     }
+  };
+
+  const handleRemoveDraftQuestion = (index: number) => {
+      setDraftQuestions(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSaveDraftQuestions = async () => {
+     if (draftQuestions.length === 0) return;
+     if (aiCreateAssignment && !aiDeadline) return alert("กรุณาระบุวันกำหนดส่งการบ้าน");
+
+     const tid = normalizeId(teacher.id);
+     if (!tid) {
+         if(!confirm('ไม่พบ ID ครู ระบบจะบันทึกโดยไม่มีเจ้าของ ยืนยัน?')) return;
+     }
+
+     setIsProcessing(true);
+     let successCount = 0;
+     const total = draftQuestions.length;
+
+     // 1. Save Questions to Bank
+     for (let i = 0; i < total; i++) {
+        setProcessingMessage(`กำลังบันทึกข้อสอบข้อที่ ${i + 1}/${total}...`);
+        const q = draftQuestions[i];
+        
+        const success = await addQuestion({
+            subject: qSubject,
+            grade: aiGrade,
+            text: q.text,
+            image: q.image || '',
+            c1: q.c1, c2: q.c2, c3: q.c3, c4: q.c4,
+            correct: q.correct,
+            explanation: q.explanation || '',
+            school: teacher.school,
+            teacherId: tid
+        });
+
+        if (success) successCount++;
+     }
+
+     // 2. Create Assignment (Optional)
+     if (aiCreateAssignment && successCount > 0) {
+         setProcessingMessage(`กำลังสร้างการบ้าน: ${aiTopic}...`);
+         const assignSuccess = await addAssignment(
+             teacher.school,
+             aiTopic, // Use Title as subject
+             aiGrade,
+             successCount, // Use the count of generated questions
+             aiDeadline,
+             teacher.name
+         );
+         
+         if (assignSuccess) {
+             alert(`✅ บันทึกข้อสอบ ${successCount} ข้อ และสั่งการบ้านเรียบร้อยแล้ว!`);
+         } else {
+             alert(`✅ บันทึกข้อสอบ ${successCount} ข้อสำเร็จ แต่สร้างการบ้านไม่สำเร็จ`);
+         }
+     } else {
+         alert(`✅ บันทึกข้อสอบ ${successCount}/${total} ข้อเรียบร้อยแล้ว!`);
+     }
+
+     setIsProcessing(false);
+     
+     // Clear State
+     setDraftQuestions([]);
+     setAiTopic('');
+     setAiInstructions('');
+     setShowAiModal(false);
+     setAiCreateAssignment(false);
+     setAiDeadline('');
+     await loadData();
   };
   
   const countSubmitted = (assignmentId: string) => { const submittedStudentIds = new Set(stats.filter(r => r.assignmentId === assignmentId).map(r => r.studentId)); return submittedStudentIds.size; };
@@ -598,6 +705,15 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const totalPages = Math.ceil(filteredQuestions.length / ITEMS_PER_PAGE);
   const currentQuestions = filteredQuestions.slice((qBankPage - 1) * ITEMS_PER_PAGE, qBankPage * ITEMS_PER_PAGE);
 
+  const openAiAssignmentModal = () => {
+    setAiCreateAssignment(true);
+    setShowAiModal(true);
+    // Reset defaults for assignment creation
+    setAiTopic('');
+    setAiInstructions('');
+    setDraftQuestions([]);
+  };
+
   return (
     <div className="max-w-6xl mx-auto pb-20 relative">
       
@@ -617,15 +733,104 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         </div>
       )}
 
-      {/* ✨ AI Generator Modal */}
+      {/* 🔥 Custom Delete Confirmation Modal */}
+      {deleteModal.isOpen && (
+        <div className="fixed inset-0 bg-black/50 z-[120] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-[24px] shadow-2xl max-w-sm w-full p-6 text-center transform scale-100 transition-all border-4 border-white">
+                <div className="bg-red-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+                    <Trash2 size={36} className="text-red-500" />
+                </div>
+                <h3 className="text-xl font-bold text-gray-800 mb-2">{deleteModal.title}</h3>
+                <p className="text-gray-500 mb-6 text-sm leading-relaxed">
+                   {deleteModal.message}
+                   <br/>
+                   <span className="font-bold text-red-500 mt-2 block">Will you confirm the deletion?</span>
+                </p>
+                <div className="flex gap-3">
+                    <button 
+                        onClick={() => setDeleteModal({ ...deleteModal, isOpen: false })} 
+                        className="flex-1 py-3 rounded-xl font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 transition"
+                    >
+                        ยกเลิก
+                    </button>
+                    <button 
+                        onClick={handleConfirmDelete} 
+                        className="flex-1 py-3 rounded-xl font-bold text-white bg-red-500 hover:bg-red-600 shadow-lg shadow-red-200 transition"
+                    >
+                        ยืนยันลบ
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+      
+      {/* 📚 Grade List Modal (Pop-up) */}
+      {showGradeModal && (
+        <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+             <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl overflow-hidden transform scale-100 transition-all border-4 border-white ring-4 ring-black/10">
+                 <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-5 flex justify-between items-center shadow-md">
+                     <h3 className="font-bold text-xl flex items-center gap-3">
+                        <div className="bg-white/20 p-2 rounded-xl"><Users size={24}/></div>
+                        รายชื่อนักเรียนชั้น {GRADE_LABELS[viewingGrade] || viewingGrade} ({studentsInGrade.length} คน)
+                     </h3>
+                     <button onClick={() => setShowGradeModal(false)} className="bg-white/20 hover:bg-white/30 p-2 rounded-full transition"><X size={20}/></button>
+                 </div>
+                 
+                 <div className="p-6 max-h-[60vh] overflow-y-auto bg-gray-50/50">
+                    {studentsInGrade.length > 0 ? (
+                        <div className="grid grid-cols-1 gap-3">
+                            {studentsInGrade.map(s => (
+                                <div key={s.id} className="flex items-center gap-4 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-all hover:border-purple-200">
+                                    <div className="text-3xl bg-purple-50 w-12 h-12 rounded-full flex items-center justify-center border-2 border-white shadow-sm">{s.avatar}</div>
+                                    <div className="flex-1">
+                                        <div className="font-bold text-gray-800 text-lg">{s.name}</div>
+                                        <div className="text-xs text-gray-400 font-mono bg-gray-100 px-2 py-0.5 rounded w-fit">ID: {s.id}</div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button 
+                                            onClick={() => handleEditStudent(s)} 
+                                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition border border-transparent hover:border-blue-100 flex items-center gap-1 font-bold text-sm"
+                                        >
+                                            <Edit size={16}/> แก้ไข
+                                        </button>
+                                        <button 
+                                            onClick={() => openDeleteModal(s.id, 'STUDENT')} 
+                                            className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition border border-transparent hover:border-red-100 flex items-center gap-1 font-bold text-sm"
+                                        >
+                                            <Trash2 size={16}/> ลบ
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center py-16 text-gray-400 bg-white rounded-3xl border-2 border-dashed border-gray-200">
+                            <FolderOpen size={48} className="mb-2 opacity-30"/>
+                            <p>ยังไม่มีรายชื่อนักเรียนในชั้นนี้</p>
+                        </div>
+                    )}
+                 </div>
+                 
+                 <div className="p-4 bg-white border-t border-gray-100 text-center flex justify-end">
+                     <button onClick={() => setShowGradeModal(false)} className="bg-gray-100 text-gray-600 px-8 py-3 rounded-2xl font-bold hover:bg-gray-200 transition">ปิดหน้าต่าง</button>
+                 </div>
+             </div>
+        </div>
+      )}
+
+      {/* ✨ AI Homework Builder Modal */}
       {showAiModal && (
           <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center p-4 backdrop-blur-sm">
-              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-fade-in overflow-hidden border-2 border-indigo-100">
-                  <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-4 text-white flex justify-between items-center">
-                      <h3 className="font-bold text-lg flex items-center gap-2"><Sparkles size={20} className="text-yellow-300" /> ให้ AI ช่วยออกข้อสอบภาษาไทย ป.2</h3>
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl animate-fade-in overflow-hidden border-2 border-indigo-100 flex flex-col max-h-[90vh]">
+                  <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-4 text-white flex justify-between items-center shrink-0">
+                      <h3 className="font-bold text-lg flex items-center gap-2">
+                        <Sparkles size={20} className="text-yellow-300" /> 
+                        {aiCreateAssignment ? 'สร้างการบ้านด้วย AI (Form)' : 'สร้างแบบทดสอบเข้าคลังข้อสอบ'}
+                      </h3>
                       <button onClick={() => setShowAiModal(false)} className="hover:bg-white/20 p-1 rounded-lg transition"><X size={20}/></button>
                   </div>
-                  <div className="p-6">
+                  
+                  <div className="p-6 overflow-y-auto flex-1">
                       
                       {/* API Key Input */}
                       <div className="mb-4 bg-indigo-50 p-3 rounded-xl border border-indigo-100">
@@ -661,52 +866,110 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                           />
                       </div>
 
-                      <div className="bg-gray-50 p-3 rounded-xl mb-4 text-sm flex gap-2">
-                          <span className="font-bold text-gray-700">เรื่อง:</span> {qSubject}
-                      </div>
-
-                      <div className="mb-4">
-                          <label className="block text-sm font-bold text-gray-700 mb-2">ระบุรายละเอียดเพิ่มเติม</label>
-                          <input 
-                            type="text" 
-                            value={aiTopic}
-                            onChange={(e) => setAiTopic(e.target.value)}
-                            className="w-full p-3 border-2 border-indigo-100 rounded-xl focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 outline-none transition"
-                            placeholder="เช่น แม่กด, อักษรกลาง, คำที่ใช้ รร..."
-                          />
-                      </div>
-
-                      <div className="mb-6">
-                          <label className="block text-sm font-bold text-gray-700 mb-2">จำนวนข้อ</label>
-                          <div className="grid grid-cols-2 gap-3">
-                              <button 
-                                onClick={() => setAiCount(1)}
-                                className={`p-3 rounded-xl border-2 font-bold text-sm transition flex flex-col items-center gap-1 ${aiCount === 1 ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-500'}`}
-                              >
-                                  <span className="text-lg">1 ข้อ</span>
-                                  <span className="text-[10px] font-normal">ลงฟอร์มเพื่อแก้ไข</span>
-                              </button>
-                              <button 
-                                onClick={() => setAiCount(5)}
-                                className={`p-3 rounded-xl border-2 font-bold text-sm transition flex flex-col items-center gap-1 ${aiCount === 5 ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-gray-200 text-gray-500'}`}
-                              >
-                                  <span className="text-lg">5 ข้อ</span>
-                                  <span className="text-[10px] font-normal">บันทึกทันที</span>
-                              </button>
+                      <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div>
+                             <label className="block text-sm font-bold text-gray-700 mb-1">หมวดวิชา</label>
+                             <select value={qSubject} onChange={(e) => setQSubject(e.target.value as Subject)} className="w-full p-3 border rounded-xl bg-white text-sm font-bold text-gray-800 outline-none focus:ring-2 focus:ring-indigo-200">
+                                {Object.values(Subject).map((s) => <option key={s} value={s}>{s}</option>)}
+                             </select>
+                          </div>
+                          <div>
+                              <label className="block text-sm font-bold text-gray-700 mb-1">ระดับชั้น</label>
+                              <select value={aiGrade} onChange={(e) => setAiGrade(e.target.value)} className="w-full p-3 border rounded-xl bg-white text-sm font-bold text-gray-800 outline-none focus:ring-2 focus:ring-indigo-200">
+                                  {GRADE_OPTIONS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
+                              </select>
                           </div>
                       </div>
 
-                      <button 
-                        onClick={handleAiGenerate} 
-                        disabled={isGeneratingAi || !aiTopic || !geminiApiKey}
-                        className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all hover:scale-[1.02]"
-                      >
-                          {isGeneratingAi ? (
-                              <><RefreshCw size={18} className="animate-spin" /> กำลังคิดโจทย์...</>
-                          ) : (
-                              <><Wand2 size={18} /> {aiCount === 1 ? 'สร้าง 1 ข้อ' : 'สร้างและบันทึก 5 ข้อ'}</>
-                          )}
-                      </button>
+                      {/* ✅ Topic Input - Only for Assignment (Homework Title) */}
+                      {aiCreateAssignment && (
+                        <div className="mb-4">
+                            <label className="block text-sm font-bold text-gray-700 mb-2">หัวข้อแบบฝึกหัด (ชื่อการบ้าน)</label>
+                            <input 
+                                type="text" 
+                                value={aiTopic}
+                                onChange={(e) => setAiTopic(e.target.value)}
+                                className="w-full p-3 border-2 border-indigo-100 rounded-xl focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 outline-none transition"
+                                placeholder="เช่น การบ้านชุดที่ 1, ฝึกอ่านคำควบกล้ำ"
+                            />
+                        </div>
+                      )}
+
+                      {/* ✅ Instructions Input - For both modes */}
+                      <div className="mb-4">
+                          <label className="block text-sm font-bold text-gray-700 mb-2">คำสั่ง/คำอธิบายสำหรับ AI</label>
+                          <textarea 
+                              value={aiInstructions}
+                              onChange={(e) => setAiInstructions(e.target.value)}
+                              className="w-full p-3 border-2 border-indigo-100 rounded-xl focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 outline-none transition"
+                              placeholder="เช่น ขอโจทย์ยากๆ, เน้นคำที่มี รร, ไม่เอาคำศัพท์ยากเกินไป"
+                              rows={2}
+                          />
+                      </div>
+
+                      {/* ✅ Assignment Options (Visible only in assignment mode) */}
+                      {aiCreateAssignment && (
+                          <div className="mb-6 p-4 bg-orange-50 rounded-xl border border-orange-200 animate-fade-in">
+                              <h4 className="text-sm font-bold text-orange-800 mb-3 flex items-center gap-2"><Calendar size={16}/> ตั้งค่าการส่งงาน</h4>
+                              <div className="grid grid-cols-1 gap-4">
+                                  <div>
+                                      <label className="block text-xs font-bold text-orange-600 mb-1">กำหนดส่งภายใน (Deadline)</label>
+                                      <input 
+                                        type="date" 
+                                        value={aiDeadline}
+                                        onChange={(e) => setAiDeadline(e.target.value)}
+                                        className="w-full p-2 border border-orange-300 rounded-lg text-sm bg-white"
+                                      />
+                                  </div>
+                              </div>
+                          </div>
+                      )}
+
+                      {/* Draft Questions List */}
+                      {draftQuestions.length > 0 && (
+                          <div className="mb-6">
+                              <h4 className="text-sm font-bold text-gray-600 mb-2 flex items-center justify-between">
+                                  <span>รายการข้อสอบที่จะสร้าง ({draftQuestions.length} ข้อ)</span>
+                                  <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">พร้อมบันทึก</span>
+                              </h4>
+                              <div className="bg-gray-50 border border-gray-200 rounded-xl max-h-48 overflow-y-auto p-2 space-y-2">
+                                  {draftQuestions.map((q, idx) => (
+                                      <div key={idx} className="bg-white p-3 rounded-lg border border-gray-100 shadow-sm flex gap-3 group">
+                                          <div className="bg-gray-100 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-gray-500 shrink-0">{idx + 1}</div>
+                                          <div className="flex-1">
+                                              <p className="text-sm font-bold text-gray-800 line-clamp-1">{q.text}</p>
+                                              <p className="text-xs text-gray-400 mt-1">เฉลย: {q.correct} | {q.explanation}</p>
+                                          </div>
+                                          <button onClick={() => handleRemoveDraftQuestion(idx)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition"><X size={16}/></button>
+                                      </div>
+                                  ))}
+                              </div>
+                          </div>
+                      )}
+
+                      <div className="flex flex-col gap-3">
+                        <button 
+                            onClick={handleAiGenerate} 
+                            disabled={isGeneratingAi || !geminiApiKey}
+                            className={`w-full py-3 rounded-xl font-bold shadow-sm border-2 transition-all flex items-center justify-center gap-2 ${draftQuestions.length > 0 ? 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50' : 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700'}`}
+                        >
+                            {isGeneratingAi ? (
+                                <><RefreshCw size={18} className="animate-spin" /> กำลังสร้างโจทย์ 5 ข้อ...</>
+                            ) : (
+                                <><Plus size={18} /> {draftQuestions.length > 0 ? 'เพิ่มอีก 5 ข้อ' : 'เริ่มสร้าง 5 ข้อแรก'}</>
+                            )}
+                        </button>
+
+                        {draftQuestions.length > 0 && (
+                            <button 
+                                onClick={handleSaveDraftQuestions}
+                                disabled={isProcessing}
+                                className="w-full bg-green-500 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-green-600 flex items-center justify-center gap-2 animate-pulse hover:animate-none"
+                            >
+                                <Save size={18} /> {aiCreateAssignment ? 'บันทึกและมอบหมายงานทันที' : 'บันทึกลงคลังข้อสอบ'} ({draftQuestions.length} ข้อ)
+                            </button>
+                        )}
+                      </div>
                   </div>
               </div>
           </div>
@@ -714,7 +977,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
 
       <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-6 rounded-b-3xl md:rounded-3xl shadow-lg mb-8 flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold flex items-center gap-2"><GraduationCap size={28} /> ห้องพักครู (ภาษาไทย ป.2)</h2>
+          <h2 className="text-2xl font-bold flex items-center gap-2"><GraduationCap size={28} /> ห้องพักครู (ภาษาไทย)</h2>
           <div className="opacity-90 text-sm mt-1 flex gap-2">
              <span>{teacher.school} • คุณครู{teacher.name}</span>
              {teacher.id && <span className="bg-black/20 px-2 rounded text-xs font-mono flex items-center gap-1"><Shield size={10}/> ID: {teacher.id}</span>}
@@ -725,7 +988,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
 
       {activeTab === 'menu' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 px-4 md:px-0">
-            <MenuCard icon={<UserPlus size={40} />} title="จัดการนักเรียน" desc="ลงทะเบียนนักเรียน ป.2" color="bg-purple-50 text-purple-600 border-purple-200" onClick={() => setActiveTab('students')} />
+            <MenuCard icon={<UserPlus size={40} />} title="จัดการนักเรียน" desc="ลงทะเบียนนักเรียน ป.1-6" color="bg-purple-50 text-purple-600 border-purple-200" onClick={() => setActiveTab('students')} />
             <MenuCard icon={<Calendar size={40} />} title="สั่งการบ้าน" desc="มอบหมายงานภาษาไทย" color="bg-orange-50 text-orange-600 border-orange-200" onClick={() => setActiveTab('assignments')} />
             <MenuCard icon={<BarChart2 size={40} />} title="ดูผลคะแนน" desc="สถิติการสอบ" color="bg-green-50 text-green-600 border-green-200" onClick={() => setActiveTab('stats')} />
             <MenuCard icon={<FileText size={40} />} title="คลังข้อสอบ" desc="เพิ่มและจัดการข้อสอบ" color="bg-blue-50 text-blue-600 border-blue-200" onClick={() => setActiveTab('questions')} />
@@ -832,7 +1095,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                                      <td className="p-3"><span className={`text-[10px] px-2 py-1 rounded font-bold ${t.role==='ADMIN'?'bg-red-100 text-red-600':'bg-blue-100 text-blue-600'}`}>{t.role}</span></td>
                                                      <td className="p-3 text-right flex justify-end gap-2">
                                                          <button onClick={()=>handleEditTeacher(t)} className="text-blue-500 hover:bg-blue-50 p-1 rounded"><Edit size={14}/></button>
-                                                         <button onClick={()=>handleDeleteTeacher(t.id!)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={14}/></button>
+                                                         <button onClick={()=>openDeleteModal(String(t.id), 'TEACHER')} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={14}/></button>
                                                      </td>
                                                  </tr>
                                              ))}
@@ -850,11 +1113,25 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 <div className="grid md:grid-cols-2 gap-8">
                   <div id="student-form">
                     <h3 className="text-lg font-bold text-gray-800 mb-4">
-                        {editingStudentId ? <span className="text-orange-600 flex items-center gap-2">✏️ กำลังแก้ไขข้อมูลนักเรียน</span> : 'ลงทะเบียนนักเรียนใหม่ (ป.2)'}
+                        {editingStudentId ? <span className="text-orange-600 flex items-center gap-2">✏️ กำลังแก้ไขข้อมูลนักเรียน</span> : 'ลงทะเบียนนักเรียนใหม่'}
                     </h3>
                     <div className={`p-6 rounded-2xl border border-gray-200 transition-colors ${editingStudentId ? 'bg-orange-50 border-orange-200' : 'bg-gray-50'}`}>
                       <label className="block text-sm font-medium text-gray-600 mb-2">ชื่อ-นามสกุล</label>
                       <input type="text" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} className="w-full p-3 border rounded-xl mb-4 focus:ring-2 focus:ring-purple-200 outline-none text-gray-800 bg-white" placeholder="ด.ช. มานะ อดทน" />
+                      
+                      <label className="block text-sm font-medium text-gray-600 mb-2">ระดับชั้น</label>
+                      <div className="grid grid-cols-3 gap-2 mb-4">
+                            {GRADE_OPTIONS.map(g => (
+                                <button
+                                    key={g.value}
+                                    onClick={() => setNewStudentGrade(g.value)}
+                                    className={`py-2 px-3 rounded-xl text-sm font-bold border-2 transition ${newStudentGrade === g.value ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-gray-100 bg-white text-gray-500 hover:border-purple-200'}`}
+                                >
+                                    {g.label}
+                                </button>
+                            ))}
+                      </div>
+
                       <div className="bg-purple-50 p-3 rounded-xl mb-4 border border-purple-100"><span className="text-xs text-purple-600 font-bold uppercase">สังกัดโรงเรียน</span><p className="text-gray-800 font-medium truncate">{teacher.school}</p></div>
                       <label className="block text-sm font-medium text-gray-600 mb-2">รูปแทนตัว</label>
                       <div className="flex gap-2 mb-6 overflow-x-auto py-1">{['👦','👧','🧒','🧑','👓','🦄','🦁','🐼'].map(emoji => (<button key={emoji} onClick={() => setNewStudentAvatar(emoji)} className={`text-2xl p-2 rounded-lg border-2 transition ${newStudentAvatar === emoji ? 'border-purple-500 bg-purple-50' : 'border-transparent hover:bg-gray-200'}`}>{emoji}</button>))}</div>
@@ -868,48 +1145,49 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                           </button>
                       </div>
                     </div>
-                    
-                    <div className="mt-6">
-                      <div className="flex justify-between items-center mb-2"><h4 className="text-sm font-bold text-gray-500">รายชื่อนักเรียน ({students.length})</h4><button onClick={loadData} className="text-purple-600 hover:bg-purple-50 p-1 rounded"><RefreshCw size={14}/></button></div>
-                      
-                      {/* ✅ Fixed List Layout: Name and ID on same row */}
-                      <div className="border border-gray-200 rounded-xl overflow-hidden bg-white max-h-[400px] overflow-y-auto divide-y divide-gray-100">
-                            {students.map(s => (
-                                <div key={s.id} className={`flex items-center p-3 gap-3 hover:bg-gray-50 ${editingStudentId === s.id ? 'bg-orange-50' : ''}`}>
-                                    <div className="flex-shrink-0 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-lg">{s.avatar}</div>
-                                    {/* ✅ Change: Flex Row for Name and ID */}
-                                    <div className="flex-1 min-w-0 flex items-center gap-2">
-                                        <p className="text-sm font-bold text-gray-800 truncate">{s.name}</p>
-                                        <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded border">ID: {s.id}</span>
-                                    </div>
-                                    <div className="flex gap-1">
-                                        <button onClick={() => handleEditStudent(s)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="แก้ไข"><Edit size={14}/></button>
-                                        <button onClick={() => handleDeleteStudent(s.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="ลบ"><Trash2 size={14}/></button>
-                                    </div>
-                                </div>
-                            ))}
-                            {students.length === 0 && <div className="p-6 text-center text-gray-400">ยังไม่มีนักเรียน</div>}
-                      </div>
-                    </div>
                   </div>
-                  {/* Student Card Preview */}
-                  <div className="flex flex-col items-center justify-center mt-6 md:mt-0">
-                    {createdStudent ? (
-                      <div className="bg-gradient-to-br from-blue-500 to-purple-600 p-1 rounded-3xl shadow-2xl w-full max-w-xs animate-fade-in scale-100 transition-transform">
-                        <div className="bg-white rounded-[22px] p-6 text-center relative overflow-hidden">
-                          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-400 to-purple-500"></div>
-                          <h4 className="text-gray-500 text-xs uppercase tracking-widest font-bold mb-4">บัตรประจำตัวนักเรียน</h4>
-                          <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center text-6xl mx-auto mb-4 shadow-inner">{createdStudent.avatar}</div>
-                          <h3 className="text-xl font-bold text-gray-800 mb-1">{createdStudent.name}</h3>
-                          <div className="flex justify-center gap-2 mb-6">
-                              <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-xs font-bold">ป.2</span>
-                              <span className="text-gray-500 text-xs">{createdStudent.school}</span>
-                          </div>
-                          <div className="bg-gray-100 rounded-xl p-3 mb-2"><span className="block text-xs text-gray-400 mb-1">รหัสเข้าใช้งาน (ID)</span><span className="text-3xl font-mono font-black text-purple-600 tracking-widest">{createdStudent.id}</span></div>
+                  
+                  {/* Right Side: Grade Cards instead of long list */}
+                  <div className="mt-6 md:mt-0">
+                    <div className="flex justify-between items-center mb-4"><h4 className="text-sm font-bold text-gray-500">รายชื่อนักเรียน ({students.length})</h4><button onClick={loadData} className="text-purple-600 hover:bg-purple-50 p-1 rounded"><RefreshCw size={14}/></button></div>
+                    
+                    {/* ✅ New Grade Cards Grid */}
+                    <div className="grid grid-cols-2 gap-4">
+                        {GRADE_OPTIONS.map(g => {
+                            const count = students.filter(s => (s.grade || 'P2') === g.value).length;
+                            return (
+                                <button 
+                                    key={g.value} 
+                                    onClick={() => handleViewGradeStudents(g.value)}
+                                    className={`p-5 rounded-2xl border-2 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all flex flex-col items-center justify-center gap-2 ${g.color} bg-white`}
+                                >
+                                    <h3 className="text-3xl font-black">{g.label}</h3>
+                                    <span className="text-sm font-bold opacity-80">{count} คน</span>
+                                    <div className="text-[10px] uppercase font-bold tracking-wider opacity-50 mt-1">คลิกดูรายชื่อ</div>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Show created card below if just created */}
+                    {createdStudent && (
+                      <div className="mt-8 flex justify-center">
+                        <div className="bg-gradient-to-br from-blue-500 to-purple-600 p-1 rounded-3xl shadow-2xl w-full max-w-xs animate-fade-in scale-100 transition-transform">
+                            <div className="bg-white rounded-[22px] p-6 text-center relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-400 to-purple-500"></div>
+                            <h4 className="text-gray-500 text-xs uppercase tracking-widest font-bold mb-4">บัตรประจำตัวนักเรียน</h4>
+                            <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center text-6xl mx-auto mb-4 shadow-inner">{createdStudent.avatar}</div>
+                            <h3 className="text-xl font-bold text-gray-800 mb-1">{createdStudent.name}</h3>
+                            <div className="flex justify-center gap-2 mb-6">
+                                <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-xs font-bold">{GRADE_LABELS[createdStudent.grade || 'P2']}</span>
+                                <span className="text-gray-500 text-xs">{createdStudent.school}</span>
+                            </div>
+                            <div className="bg-gray-100 rounded-xl p-3 mb-2"><span className="block text-xs text-gray-400 mb-1">รหัสเข้าใช้งาน (ID)</span><span className="text-3xl font-mono font-black text-purple-600 tracking-widest">{createdStudent.id}</span></div>
+                            </div>
+                            <div className="text-center mt-4"><button onClick={() => setCreatedStudent(null)} className="text-white/90 text-sm font-bold underline hover:text-white">+ เพิ่มคนต่อไป</button></div>
                         </div>
-                        <div className="text-center mt-4"><button onClick={() => setCreatedStudent(null)} className="text-white/90 text-sm font-bold underline hover:text-white">+ เพิ่มคนต่อไป</button></div>
                       </div>
-                    ) : (<div className="text-center text-gray-400"><div className="bg-gray-100 w-32 h-48 rounded-xl mx-auto mb-4 border-2 border-dashed border-gray-300 flex items-center justify-center"><UserPlus size={40} className="opacity-20" /></div><p>กรอกชื่อด้านซ้ายเพื่อสร้างรหัส (เริ่มที่ 10001)</p></div>)}
+                    )}
                   </div>
                 </div>
             )}
@@ -917,82 +1195,73 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             {activeTab === 'assignments' && (
               // Assignment Content
               <div className="max-w-4xl mx-auto">
-                 <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 mb-8">
-                    <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Calendar className="text-orange-500"/> สั่งงานใหม่ (ป.2)</h4>
-                    <div className="grid md:grid-cols-4 gap-4">
-                        <div className="md:col-span-2">
-                            <label className="text-xs font-bold text-gray-500 block mb-1">เรื่อง</label>
-                            <select value={assignSubject} onChange={(e) => setAssignSubject(e.target.value as Subject)} className="w-full p-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-orange-200 outline-none">
-                                {Object.values(Subject).map((s) => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="text-xs font-bold text-gray-500 block mb-1">จำนวนข้อ</label>
-                            <input type="number" value={assignCount} onChange={(e) => setAssignCount(Number(e.target.value))} className="w-full p-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-orange-200 outline-none" min="5" max="50" />
-                        </div>
-                        <div>
-                            <label className="text-xs font-bold text-gray-500 block mb-1">ส่งภายใน</label>
-                            <input type="date" value={assignDeadline} onChange={(e) => setAssignDeadline(e.target.value)} className="w-full p-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-orange-200 outline-none" />
-                        </div>
-                        <div className="flex items-end md:col-span-4">
-                            <button onClick={handleCreateAssignment} disabled={isProcessing} className="w-full bg-orange-500 text-white py-2 rounded-lg font-bold shadow hover:bg-orange-600 disabled:opacity-50 flex items-center justify-center gap-2 h-[42px]">
-                                {isProcessing ? 'กำลังบันทึก...' : <><Save size={16}/> สั่งงาน</>}
-                            </button>
-                        </div>
-                    </div>
+                 {/* ✅ NEW: Create AI Assignment Button */}
+                 <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl p-6 shadow-md text-white mb-8 flex justify-between items-center relative overflow-hidden">
+                     <div className="relative z-10">
+                         <h2 className="text-2xl font-bold flex items-center gap-2 mb-2"><Sparkles className="text-yellow-300" /> สร้างการบ้านด้วย AI</h2>
+                         <p className="text-white/80 text-sm">ผู้ช่วยสร้างแบบทดสอบพร้อมเฉลย มอบหมายงานได้ทันที</p>
+                         <button 
+                            onClick={openAiAssignmentModal}
+                            className="mt-4 bg-white text-indigo-600 px-6 py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-50 transition transform hover:-translate-y-1 flex items-center gap-2"
+                         >
+                             <Wand2 size={20} /> เริ่มสร้างแบบฝึกหัด
+                         </button>
+                     </div>
+                     <div className="absolute right-0 bottom-0 opacity-10 transform translate-x-10 translate-y-10">
+                         <FileText size={180} />
+                     </div>
                  </div>
-    
+
                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-bold text-gray-800">รายการการบ้านที่สั่งแล้ว ({assignments.length})</h3>
+                    <h3 className="text-lg font-bold text-gray-800">การบ้านของนักเรียน ({assignments.length})</h3>
                     <button onClick={loadData} className="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-lg text-gray-600 flex items-center gap-1"><RefreshCw size={14}/> รีเฟรช</button>
                  </div>
+                 
                  {assignments.length === 0 ? (
                      <div className="text-center py-10 text-gray-400 border-2 border-dashed rounded-xl">ยังไม่มีการบ้าน</div>
                  ) : (
-                     <div className="overflow-x-auto bg-white rounded-xl shadow-sm border border-gray-200">
-                         <table className="w-full text-sm text-left">
-                             <thead className="bg-orange-50 text-orange-900">
-                                 <tr><th className="p-3">เรื่อง</th><th className="p-3 text-center">จำนวนข้อ</th><th className="p-3">กำหนดส่ง</th><th className="p-3 text-center">คนส่งแล้ว</th><th className="p-3 text-right">จัดการ</th></tr>
-                             </thead>
-                             <tbody>
-                                 {assignments.slice().reverse().map((a) => {
-                                     const submittedCount = countSubmitted(a.id);
-                                     const isExpired = new Date(a.deadline) < new Date();
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                         {assignments.slice().reverse().map((a) => {
+                             const submittedCount = countSubmitted(a.id);
+                             const isExpired = new Date(a.deadline) < new Date();
+                             const isOwner = isAdmin || (a.createdBy === teacher.name);
+                             
+                             return (
+                                 <div 
+                                    key={a.id} 
+                                    onClick={() => setSelectedAssignment(a)}
+                                    className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md hover:border-orange-200 transition-all cursor-pointer relative group overflow-hidden"
+                                 >
+                                     <div className="absolute top-0 left-0 w-2 h-full bg-orange-400"></div>
+                                     <div className="flex justify-between items-start mb-2 pl-3">
+                                         <div>
+                                            <h4 className="font-bold text-gray-800 text-lg line-clamp-1">{a.subject}</h4>
+                                            <div className="text-xs text-gray-400 font-medium">
+                                                {formatDate(a.deadline)} {isExpired && <span className="text-red-500">(หมดเขต)</span>}
+                                            </div>
+                                         </div>
+                                         {isOwner && (
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); openDeleteModal(a.id, 'ASSIGNMENT'); }}
+                                                className="text-gray-300 hover:text-red-500 p-1"
+                                                title="ลบ"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                         )}
+                                     </div>
                                      
-                                     // ✅ Fix Owner Check
-                                     const isOwner = isAdmin || (a.createdBy === teacher.name);
-
-                                     return (
-                                         <tr key={a.id} className="border-b hover:bg-gray-50 last:border-0">
-                                             <td className="p-3 font-bold text-gray-900">{a.subject}</td>
-                                             <td className="p-3 text-center text-gray-900">{a.questionCount}</td>
-                                             <td className={`p-3 font-medium ${isExpired ? 'text-red-600' : 'text-gray-900'}`}>
-                                                 {formatDate(a.deadline)} {isExpired && '(หมดเขต)'}
-                                             </td>
-                                             <td className="p-3 text-center">
-                                                 <span className={`px-2 py-1 rounded-full font-bold text-xs ${submittedCount > 0 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}>
-                                                     {submittedCount} คน
-                                                 </span>
-                                             </td>
-                                             <td className="p-3 text-right flex justify-end gap-2">
-                                                 <button onClick={() => setSelectedAssignment(a)} className="bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1 border border-blue-200">
-                                                     <Eye size={14} /> ดู
-                                                 </button>
-                                                 {isOwner && (
-                                                     <button 
-                                                         onClick={() => handleDeleteAssignment(a.id)} 
-                                                         className="bg-red-50 text-red-500 hover:bg-red-100 p-1.5 rounded-lg border border-red-200" 
-                                                         title="ลบการบ้าน"
-                                                     >
-                                                         <Trash2 size={16} />
-                                                     </button>
-                                                 )}
-                                             </td>
-                                         </tr>
-                                     );
-                                 })}
-                             </tbody>
-                         </table>
+                                     <div className="pl-3 mt-4 flex justify-between items-end">
+                                         <div className="text-sm text-gray-500">
+                                             <span className="font-bold text-orange-600 text-lg">{a.questionCount}</span> ข้อ
+                                         </div>
+                                         <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${submittedCount > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                            <CheckCircle size={12}/> {submittedCount} คนส่ง
+                                         </div>
+                                     </div>
+                                 </div>
+                             );
+                         })}
                      </div>
                  )}
               </div>
@@ -1034,10 +1303,15 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                         {/* ✨✨ AI BUTTON ✨✨ */}
                         {!editingQuestionId && (
                             <button 
-                                onClick={() => setShowAiModal(true)}
+                                onClick={() => {
+                                    setAiCreateAssignment(false); 
+                                    setShowAiModal(true);
+                                    setAiInstructions('');
+                                    setDraftQuestions([]);
+                                }}
                                 className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md hover:scale-105 transition flex items-center gap-2"
                             >
-                                <Sparkles size={14} className="text-yellow-300"/> ให้ AI ช่วยออกข้อสอบ
+                                <Sparkles size={14} className="text-yellow-300"/> สร้างโจทย์ด้วย AI
                             </button>
                         )}
                       </div>
@@ -1155,7 +1429,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                                               <Edit size={16} />
                                                           </button>
                                                           <button 
-                                                              onClick={() => handleDeleteQuestion(q.id)}
+                                                              onClick={() => openDeleteModal(q.id, 'QUESTION')}
                                                               className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition"
                                                               title="ลบข้อสอบ"
                                                           >
@@ -1215,6 +1489,62 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             )}
         </div>
       )}
+
+      {/* MODAL: View Progress (Modified Style) */}
+      {selectedAssignment && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+              <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col animate-fade-in border-4 border-white">
+                  <div className="p-5 border-b bg-orange-500 text-white flex justify-between items-center">
+                      <div>
+                        <h3 className="font-bold text-xl flex items-center gap-2"><Calendar size={24}/> {selectedAssignment.subject}</h3>
+                        <p className="text-orange-100 text-sm mt-1">กำหนดส่ง: {formatDate(selectedAssignment.deadline)}</p>
+                      </div>
+                      <button onClick={() => setSelectedAssignment(null)} className="bg-white/20 hover:bg-white/30 p-2 rounded-full transition"><X size={24}/></button>
+                  </div>
+                  
+                  <div className="overflow-y-auto p-4 flex-1 bg-gray-50">
+                      {students.length === 0 ? <div className="text-center py-10 text-gray-400">ไม่มีนักเรียนในโรงเรียนนี้</div> : (
+                      <div className="grid grid-cols-1 gap-3">
+                          {students.map(s => {
+                              // หาผลสอบของการบ้านชิ้นนี้ (เอาล่าสุด)
+                              const result = stats.filter(r => r.assignmentId === selectedAssignment.id && String(r.studentId) === String(s.id)).pop();
+                              const isSubmitted = !!result;
+                              
+                              return (
+                                  <div key={s.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+                                      <div className="flex items-center gap-4">
+                                          <span className="text-3xl bg-gray-100 w-12 h-12 flex items-center justify-center rounded-full border-2 border-white shadow-sm">{s.avatar}</span>
+                                          <div>
+                                              <div className="font-bold text-gray-800">{s.name}</div>
+                                              <div className="text-xs text-gray-400">ID: {s.id}</div>
+                                          </div>
+                                      </div>
+                                      
+                                      <div className="text-right">
+                                          {isSubmitted ? (
+                                              <div>
+                                                  <div className="text-2xl font-black text-green-600 leading-none">
+                                                      {result.score} <span className="text-sm text-gray-400 font-medium">/ {result.totalQuestions}</span>
+                                                  </div>
+                                                  <div className="text-[10px] text-green-600 font-bold bg-green-100 px-2 py-0.5 rounded-full mt-1 inline-block">ส่งแล้ว</div>
+                                              </div>
+                                          ) : (
+                                              <div className="flex flex-col items-end">
+                                                  <div className="text-2xl font-black text-gray-300">-</div>
+                                                  <div className="text-[10px] text-gray-400 font-bold bg-gray-100 px-2 py-0.5 rounded-full mt-1 inline-block">ยังไม่ส่ง</div>
+                                              </div>
+                                          )}
+                                      </div>
+                                  </div>
+                              );
+                          })}
+                      </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
     </div>
   );
 };

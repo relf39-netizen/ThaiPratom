@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Question } from '../types';
-import { CheckCircle, XCircle, ArrowRight, ArrowLeft, Volume2, Loader2 } from 'lucide-react';
+import { CheckCircle, XCircle, ArrowRight, ArrowLeft, Volume2, Loader2, Star } from 'lucide-react';
 import { speak } from '../utils/soundUtils';
 
 interface PracticeModeProps {
@@ -90,6 +90,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
   const handleChoiceSelect = (choiceId: string) => {
     if (isSubmitted) return;
     setSelectedChoice(choiceId);
+    // Optional: Play a small "pop" sound here if needed
   };
 
   const handleSubmit = () => {
@@ -241,6 +242,13 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
                   )}
                 </div>
 
+                {/* Star Icon when Selected (Before Submit) */}
+                {!isSubmitted && selectedChoice === choice.id && (
+                  <div className="absolute right-4 top-1/2 transform -translate-y-1/2 animate-bounce">
+                    <Star className="text-yellow-400 fill-yellow-400 drop-shadow-sm" size={32} />
+                  </div>
+                )}
+
                 {isSubmitted && choice.id === currentQuestion.correctChoiceId && (
                   <CheckCircle className="text-green-600 absolute right-4 drop-shadow-sm" size={28} />
                 )}
@@ -299,4 +307,3 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
 };
 
 export default PracticeMode;
-    

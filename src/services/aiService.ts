@@ -21,7 +21,7 @@ const generateImageUrl = (description: string): string => {
 export const generateQuestionWithAI = async (
   subject: string,
   grade: string,
-  topic: string,
+  instructions: string,
   apiKey: string,
   count: number = 1 
 ): Promise<GeneratedQuestion[] | null> => {
@@ -33,15 +33,15 @@ export const generateQuestionWithAI = async (
     const ai = new GoogleGenAI({ apiKey: apiKey });
     const model = "gemini-2.5-flash";
     
-    // Updated Prompt: Added Explanation Requirement back
+    // Updated Prompt: Uses instructions specifically for guidance
     const prompt = `
-      Create ${count} multiple-choice question(s) for Thai Elementary Grade 2 students.
-      Subject: Thai Language (ภาษาไทย ป.2)
-      Category: ${subject}
-      Topic Details: ${topic}
+      Create ${count} multiple-choice question(s) for Thai Elementary students.
+      Grade Level: ${grade} (Please strictly adjust the difficulty for this grade level).
+      Subject: Thai Language (${subject})
+      Specific Instructions: ${instructions}
       
       Requirements:
-      - Language: Thai (Simple, natural, appropriate for 7-8 year old kids).
+      - Language: Thai (Simple, natural, appropriate for ${grade} students).
       - Return an array of objects.
       - Each object must have 4 choices (c1, c2, c3, c4).
       - Indicate the correct choice number (1, 2, 3, or 4).
