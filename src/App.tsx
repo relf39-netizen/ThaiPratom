@@ -223,7 +223,7 @@ const App: React.FC = () => {
             );
           
           case 'results': return <Results score={lastScore?.score || 0} total={lastScore?.total || 0} isHomework={lastScore?.isHomework} isGame={lastScore?.isGame} onRetry={() => setCurrentPage('select-subject')} onHome={() => setCurrentPage('dashboard')} />;
-          case 'stats': return <Stats examResults={examResults} studentId={currentUser!.id} onBack={() => setCurrentPage('dashboard')} />;
+          case 'stats': return <Stats examResults={examResults} student={currentUser!} onBack={() => setCurrentPage('dashboard')} />;
           default: return <Dashboard student={currentUser!} assignments={assignments} examResults={examResults} onNavigate={setCurrentPage} onStartAssignment={handleStartAssignment} onSelectSubject={handleSelectSubject} />;
         }
       })()}

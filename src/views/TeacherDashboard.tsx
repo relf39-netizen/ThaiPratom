@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Teacher, Student, Subject, Assignment, Question, SubjectDef } from '../types';
-import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, Sparkles, Wand2, Library, ArrowLeft, GraduationCap, Trash2, Edit, UserCog, Clock, PenTool, Bot } from 'lucide-react';
+import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, Sparkles, Wand2, Library, ArrowLeft, GraduationCap, Trash2, Edit, UserCog, Clock, PenTool, Bot, Info, ExternalLink, ImageIcon } from 'lucide-react';
 import { getTeacherDashboard, manageStudent, addAssignment, addQuestion, editQuestion, GOOGLE_SCRIPT_URL, deleteQuestion, deleteAssignment } from '../services/api';
 import { generateQuestionWithAI, GeneratedQuestion } from '../services/aiService';
 import { getSchoolSubjects, addSubject, deleteSubject } from '../services/subjectService';
@@ -325,6 +325,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         alert('✅ บันทึกข้อสอบเรียบร้อยแล้ว'); 
         setEditingQuestionId(null); 
         setQText(''); 
+        setQImage('');
         setQChoices({c1:'', c2:'', c3:'', c4:''}); 
         setShowManualQForm(false); // Close form after save
         await loadData(); 
@@ -701,7 +702,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                      <p className="text-white/80 text-sm">สร้างโจทย์อัตโนมัติ รวดเร็ว</p>
                                  </div>
                              </button>
-                             <button onClick={() => { setShowManualQForm(!showManualQForm); setQGrade(qBankSelectedGrade); setEditingQuestionId(null); setQText(''); setQChoices({c1:'',c2:'',c3:'',c4:''}); }} className={`p-6 rounded-2xl border-2 transition-all flex flex-col items-center justify-center gap-3 ${showManualQForm ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-200 hover:border-blue-300 text-gray-700'}`}>
+                             <button onClick={() => { setShowManualQForm(!showManualQForm); setQGrade(qBankSelectedGrade); setEditingQuestionId(null); setQText(''); setQImage(''); setQChoices({c1:'',c2:'',c3:'',c4:''}); }} className={`p-6 rounded-2xl border-2 transition-all flex flex-col items-center justify-center gap-3 ${showManualQForm ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-200 hover:border-blue-300 text-gray-700'}`}>
                                  <div className={`p-3 rounded-full ${showManualQForm ? 'bg-blue-200' : 'bg-gray-100'}`}><PenTool size={32}/></div>
                                  <div className="text-center">
                                      <h4 className="text-xl font-bold">สร้างด้วยตนเอง</h4>
@@ -731,6 +732,24 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                   
                                   <div className="mb-4">
                                      <textarea value={qText} onChange={(e)=>setQText(e.target.value)} className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-blue-200" rows={3} placeholder="พิมพ์โจทย์คำถามที่นี่..."></textarea>
+                                  </div>
+
+                                  <div className="mb-4">
+                                      <label className="block text-xs font-bold text-gray-500 mb-1">ลิงก์รูปภาพ (ถ้ามี)</label>
+                                      <div className="flex gap-2 items-center">
+                                          <input 
+                                            type="text" 
+                                            value={qImage} 
+                                            onChange={(e)=>setQImage(e.target.value)} 
+                                            className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-200 text-sm" 
+                                            placeholder="วางลิงก์รูปภาพที่นี่ (https://...)"
+                                          />
+                                          {qImage && (
+                                              <div className="w-10 h-10 bg-gray-100 rounded border flex items-center justify-center overflow-hidden flex-shrink-0">
+                                                  <img src={qImage} alt="preview" className="w-full h-full object-cover" onError={(e)=>{(e.target as HTMLImageElement).style.display='none'}}/>
+                                              </div>
+                                          )}
+                                      </div>
                                   </div>
                                   
                                   <div className="grid grid-cols-2 gap-4 mb-4">
@@ -882,8 +901,17 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                       <button onClick={()=>setShowAiModal(false)}><X size={20}/></button>
                   </div>
                   <div className="p-6 overflow-y-auto">
+                      <div className="bg-blue-50 p-3 rounded-lg mb-4 text-sm text-blue-800 border border-blue-100">
+                          <p className="font-bold flex items-center gap-1"><Info size={16}/> วิธีรับ API Key:</p>
+                          <ol className="list-decimal list-inside ml-1 mt-1 space-y-1">
+                              <li>ไปที่ <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="underline font-bold text-indigo-700 hover:text-indigo-900 inline-flex items-center gap-1">Google AI Studio <ExternalLink size={12}/></a></li>
+                              <li>กดปุ่ม "Create API key"</li>
+                              <li>คัดลอกรหัสมาวางในช่องด้านล่าง</li>
+                          </ol>
+                      </div>
+
                       <div className="mb-4">
-                          <input type="password" value={geminiApiKey} onChange={(e)=>setGeminiApiKey(e.target.value)} className="w-full p-2 border rounded-lg text-sm mb-2" placeholder="Gemini API Key"/>
+                          <input type="password" value={geminiApiKey} onChange={(e)=>setGeminiApiKey(e.target.value)} className="w-full p-2 border rounded-lg text-sm mb-2 focus:ring-2 focus:ring-indigo-300 outline-none" placeholder="วาง API Key ที่นี่ (เริ่มต้นด้วย AIza...)"/>
                           
                           <div className="grid grid-cols-2 gap-4 mb-2">
                               <div>
@@ -911,23 +939,41 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
 
                       {/* Draft List */}
                       {draftQuestions.length > 0 && (
-                          <div className="bg-gray-50 p-2 rounded-lg mb-4 max-h-40 overflow-y-auto">
+                          <div className="bg-gray-50 p-2 rounded-lg mb-4 max-h-60 overflow-y-auto border border-gray-200">
                               {draftQuestions.map((q,i) => (
-                                  <div key={i} className="text-xs border-b p-2 flex justify-between">
-                                      <span>{i+1}. {q.text}</span>
-                                      <button onClick={()=>setDraftQuestions(draftQuestions.filter((_,idx)=>idx!==i))} className="text-red-500"><X size={12}/></button>
+                                  <div key={i} className="text-xs border-b p-3 bg-white rounded mb-2 shadow-sm">
+                                      <div className="flex justify-between items-start mb-2">
+                                          <span className="font-bold text-gray-700 flex-1">{i+1}. {q.text}</span>
+                                          <button onClick={()=>setDraftQuestions(draftQuestions.filter((_,idx)=>idx!==i))} className="text-red-500 hover:bg-red-50 p-1 rounded ml-2"><X size={14}/></button>
+                                      </div>
+                                      
+                                      <div className="flex items-center gap-2 mt-2">
+                                          <label className="whitespace-nowrap font-bold text-gray-500 flex items-center gap-1"><ImageIcon size={12}/> รูปภาพ:</label>
+                                          <input 
+                                            type="text" 
+                                            value={q.image || ''} 
+                                            onChange={(e) => {
+                                                const newDrafts = [...draftQuestions];
+                                                newDrafts[i].image = e.target.value;
+                                                setDraftQuestions(newDrafts);
+                                            }}
+                                            className="flex-1 p-1.5 border rounded bg-gray-50 text-gray-600 focus:bg-white focus:ring-1 focus:ring-blue-200 transition-colors"
+                                            placeholder="วางลิงก์รูปภาพ..."
+                                          />
+                                      </div>
+                                      {q.image && <img src={q.image} className="mt-2 h-20 object-contain rounded border bg-white" alt="AI Gen" onError={(e)=>{(e.target as HTMLImageElement).style.display='none'}}/>}
                                   </div>
                               ))}
                           </div>
                       )}
 
                       <div className="flex gap-2">
-                          <button onClick={handleAiGenerate} disabled={isGeneratingAi} className="flex-1 py-2 bg-indigo-600 text-white rounded-lg font-bold">
+                          <button onClick={handleAiGenerate} disabled={isGeneratingAi} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-md transition disabled:opacity-50">
                               {isGeneratingAi ? 'กำลังสร้าง...' : `สร้าง 5 ข้อ`}
                           </button>
                           {draftQuestions.length > 0 && (
-                              <button onClick={handleSaveDraftQuestions} disabled={isProcessing} className="flex-1 py-2 bg-green-500 text-white rounded-lg font-bold">
-                                  บันทึก {draftQuestions.length} ข้อ
+                              <button onClick={handleSaveDraftQuestions} disabled={isProcessing} className="flex-1 py-3 bg-green-500 text-white rounded-xl font-bold hover:bg-green-600 shadow-md transition disabled:opacity-50 flex items-center justify-center gap-2">
+                                  <Save size={18}/> บันทึกข้อสอบ ({draftQuestions.length})
                               </button>
                           )}
                       </div>
