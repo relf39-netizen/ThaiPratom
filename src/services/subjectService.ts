@@ -2,16 +2,17 @@
 import { db } from './firebaseConfig';
 import { SubjectDef } from '../types';
 
-// Helper to sanitize keys
+// Helper to sanitize keys (replace special chars with _)
 const cleanKey = (str: string) => str.replace(/[^a-zA-Z0-9]/g, '_');
 
-// ดึงรายวิชาทั้งหมดของโรงเรียน
+// ดึงรายวิชาทั้งหมดของโรงเรียนจาก Firebase
 export const getSchoolSubjects = async (schoolName: string): Promise<SubjectDef[]> => {
   try {
     const key = cleanKey(schoolName);
     const snapshot = await db.ref(`schools/${key}/subjects`).once('value');
     const data = snapshot.val();
     if (data) {
+      // Firebase returns an object with keys, convert to array
       return Object.values(data);
     }
     return [];
@@ -53,14 +54,5 @@ export const deleteSubject = async (schoolName: string, subjectId: string): Prom
   }
 };
 
-// รายวิชาเริ่มต้น (Defaults) - เหลือไว้แค่ตัวอย่าง (หรือลบ P2 ออกตามโจทย์)
-export const DEFAULT_SUBJECTS: SubjectDef[] = [
-    // เหลือไว้เฉพาะ P1 หากต้องการ หรือปล่อยว่างไว้
-    { id: 'def_p1_1', name: 'พยัญชนะไทย', grade: 'P1', color: 'red', icon: '🅰️', school: 'CENTER' },
-    { id: 'def_p1_2', name: 'สระไทย', grade: 'P1', color: 'yellow', icon: '🅾️', school: 'CENTER' },
-    { id: 'def_p1_3', name: 'การผันวรรณยุกต์', grade: 'P1', color: 'green', icon: '🎵', school: 'CENTER' },
-    { id: 'def_p1_4', name: 'มาตราตัวสะกด', grade: 'P1', color: 'blue', icon: '🧩', school: 'CENTER' },
-    { id: 'def_p1_5', name: 'คำพื้นฐาน ป.1', grade: 'P1', color: 'purple', icon: '📖', school: 'CENTER' },
-    
-    // P2 ถูกลบออกแล้ว เพื่อให้ครูสร้างเอง
-];
+// No default hardcoded subjects anymore. Everything must come from DB.
+export const DEFAULT_SUBJECTS: SubjectDef[] = [];

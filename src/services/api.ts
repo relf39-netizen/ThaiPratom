@@ -2,12 +2,8 @@
 // services/api.ts
 
 import { Student, Question, Teacher, Subject, ExamResult, Assignment } from '../types'; 
+import { db, firebase } from './firebaseConfig';
 import { MOCK_STUDENTS, MOCK_QUESTIONS } from '../constants';
-
-// ---------------------------------------------------------------------------
-// 🟢 Web App URL (Updated)
-// ---------------------------------------------------------------------------
-export const GOOGLE_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbx_ZjUutJLBsaayyPQLlV2UtwPFRiJaVjXaK5w2yMMt7sJ4e6TxS8HuXjUxRxI_WKtD/exec'; 
 
 export interface AppData {
   students: Student[];
@@ -16,52 +12,75 @@ export interface AppData {
   assignments: Assignment[];
 }
 
-// 🔄 Helper: Add Timestamp to prevent caching
-const getUrl = (params: string) => {
-  const separator = params.includes('?') ? '&' : '?';
-  return `${GOOGLE_SCRIPT_URL}${params}${separator}_t=${Date.now()}`;
+// 🔄 Helper: Convert Firebase Object to Array
+const snapshotToArray = <T>(snapshot: firebase.database.DataSnapshot | null): T[] => {
+  if (!snapshot || !snapshot.val()) return [];
+  const val = snapshot.val();
+  if (Array.isArray(val)) return val.filter(v => v); // Handle if it's stored as array
+  return Object.keys(val).map(key => ({
+    ...val[key],
+    id: key // Ensure ID matches the key
+  }));
 };
 
-// 🔄 Helper: Normalize Grade (e.g. "1", "ป.1", "Grade 1" -> "P1")
+// 🔄 Helper: Normalize Grade
 const normalizeGrade = (raw: any): string => {
   const s = String(raw).trim();
-  if (!s || s === 'undefined' || s === 'null') return 'ALL'; 
-
+  if (!s || s === 'undefined' || s === 'null') return 'P2'; 
   const upper = s.toUpperCase();
   if (upper === 'ALL') return 'ALL';
   if (upper.startsWith('TEACHER')) return 'TEACHER';
   if (upper.startsWith('ADMIN')) return 'ADMIN';
-
-  // Extract first number found
   const match = s.match(/\d+/);
   if (match) {
-      const num = parseInt(match[0], 10);
-      return `P${num}`; // e.g. "1" -> "P1", "06" -> "P6"
+      return `P${match[0]}`; 
   }
-
-  // Fallback if no number found
   return 'P2'; 
 };
 
-// 🔄 Helper: Normalize Subject (Return exact string for custom subjects)
-const normalizeSubject = (rawSubject: string): Subject => {
-  const s = String(rawSubject).trim();
-  if (!s) return 'ทั่วไป';
-  return s; 
-};
+// ---------------------------------------------------------------------------
+// 🟢 TEACHER ACTIONS
+// ---------------------------------------------------------------------------
 
-// 🔄 Helper: Convert Subject to Code (For sending to backend)
-const convertToCode = (subjectEnum: Subject): string => {
-    return String(subjectEnum);
-};
-
-// ✅ Teacher Login
+// ✅ Teacher Login (Firebase)
 export const teacherLogin = async (username: string, password: string): Promise<{success: boolean, teacher?: Teacher}> => {
-  if (!GOOGLE_SCRIPT_URL) return { success: false };
   try {
-    const response = await fetch(getUrl(`?type=teacher_login&username=${username}&password=${password}`));
-    const data = await response.json();
-    return data;
+    // 1. Try to find teacher by username
+    const snapshot = await db.ref('teachers')
+      .orderByChild('username')
+      .equalTo(username)
+      .once('value');
+
+    const teachers = snapshotToArray<Teacher>(snapshot);
+    const teacher = teachers.find(t => t.password === password);
+
+    if (teacher) {
+      return { success: true, teacher };
+    }
+
+    // 🟢 EMERGENCY RECOVERY:
+    // ถ้าหา User "admin" ไม่เจอเลย (เพราะเผลอลบไป) และกรอกรหัส admin/admin
+    // ให้สร้าง Admin ใหม่ทันที ไม่ว่าจะมีครูคนอื่นอยู่หรือไม่
+    if (username === 'admin' && password === 'admin') {
+        // เช็คอีกรอบว่าไม่มี admin จริงๆ ใช่ไหม (กันพลาด create ซ้ำถ้า password ผิด)
+        const adminExists = teachers.some(t => t.username === 'admin');
+        
+        if (!adminExists) {
+            const newTeacherRef = db.ref('teachers').push();
+            const newTeacher: Teacher = {
+                id: newTeacherRef.key as string,
+                name: 'Admin Teacher',
+                username: 'admin',
+                password: 'admin',
+                school: 'Admin School',
+                role: 'ADMIN'
+            };
+            await newTeacherRef.set(newTeacher);
+            return { success: true, teacher: newTeacher };
+        }
+    }
+
+    return { success: false };
   } catch (e) {
     console.error("Login error", e);
     return { success: false };
@@ -70,11 +89,9 @@ export const teacherLogin = async (username: string, password: string): Promise<
 
 // ✅ Get All Teachers (Admin)
 export const getTeachers = async (): Promise<Teacher[]> => {
-  if (!GOOGLE_SCRIPT_URL) return [];
   try {
-    const response = await fetch(getUrl(`?type=get_teachers`));
-    const data = await response.json();
-    return Array.isArray(data) ? data : [];
+    const snapshot = await db.ref('teachers').once('value');
+    return snapshotToArray<Teacher>(snapshot);
   } catch (e) {
     console.error("Get teachers error", e);
     return [];
@@ -83,144 +100,181 @@ export const getTeachers = async (): Promise<Teacher[]> => {
 
 // ✅ Manage Teacher (Add/Edit/Delete)
 export const manageTeacher = async (data: { action: 'add' | 'edit' | 'delete', id?: string, name?: string, username?: string, password?: string, school?: string }): Promise<{success: boolean, message?: string}> => {
-  if (!GOOGLE_SCRIPT_URL) return { success: false, message: 'No URL' };
-  
   try {
-    const params = new URLSearchParams();
-    params.append('type', 'manage_teacher');
+    if (data.action === 'delete' && data.id) {
+        await db.ref(`teachers/${data.id}`).remove();
+        return { success: true };
+    }
     
-    if (data.action) params.append('action', data.action);
-    if (data.id) params.append('id', String(data.id));
-    if (data.name) params.append('name', String(data.name));
-    if (data.username) params.append('username', String(data.username));
-    if (data.password) params.append('password', String(data.password));
-    if (data.school) params.append('school', String(data.school));
-    
-    const response = await fetch(getUrl(`?${params.toString()}`));
-    const result = await response.json();
-    return result;
+    if (data.action === 'add') {
+        const newRef = db.ref('teachers').push();
+        await newRef.set({
+            id: newRef.key,
+            name: data.name,
+            username: data.username,
+            password: data.password,
+            school: data.school,
+            role: 'TEACHER'
+        });
+        return { success: true };
+    }
 
+    if (data.action === 'edit' && data.id) {
+        await db.ref(`teachers/${data.id}`).update({
+            name: data.name,
+            username: data.username,
+            password: data.password,
+            school: data.school
+        });
+        return { success: true };
+    }
+
+    return { success: false, message: 'Invalid Action' };
   } catch (e) {
     return { success: false, message: 'Connection Error' };
   }
 };
+
+// ---------------------------------------------------------------------------
+// 🟢 STUDENT ACTIONS
+// ---------------------------------------------------------------------------
 
 // ✅ Manage Student (Add/Edit/Delete)
 export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', id?: string, name?: string, school?: string, avatar?: string, grade?: string, teacherId?: string }): Promise<{success: boolean, student?: Student, message?: string, rawError?: boolean}> => {
-  if (!GOOGLE_SCRIPT_URL) return { success: false, message: 'No URL' };
-  
   try {
-    const params = new URLSearchParams();
-    params.append('type', data.action === 'add' ? 'add_student' : 'manage_student');
-    
-    if (data.action) params.append('action', data.action);
-    if (data.id) params.append('id', String(data.id));
-    if (data.name) params.append('name', String(data.name));
-    if (data.school) params.append('school', String(data.school));
-    if (data.avatar) params.append('avatar', String(data.avatar));
-    if (data.grade) params.append('grade', normalizeGrade(data.grade)); 
-    if (data.teacherId) params.append('teacherId', String(data.teacherId));
-    
-    const response = await fetch(getUrl(`?${params.toString()}`));
-    const text = await response.text();
-
-    try {
-        const result = JSON.parse(text);
-        if (data.action === 'add' && result.success && !result.student && result.id) {
-             return { 
-                 success: true, 
-                 student: { id: result.id, name: result.name, school: result.school, avatar: result.avatar, stars: 0, grade: normalizeGrade(result.grade), teacherId: result.teacherId } 
-             };
-        }
-        return result;
-
-    } catch (jsonError) {
-        return { success: false, message: 'Server returned non-JSON response', rawError: true };
+    if (data.action === 'delete' && data.id) {
+        await db.ref(`students/${data.id}`).remove();
+        // Also remove results? Optional.
+        return { success: true };
     }
 
+    if (data.action === 'edit' && data.id) {
+        await db.ref(`students/${data.id}`).update({
+            name: data.name,
+            avatar: data.avatar,
+            grade: normalizeGrade(data.grade),
+            teacherId: data.teacherId || null
+        });
+        return { success: true };
+    }
+
+    if (data.action === 'add') {
+        // Transaction to generate 5-digit ID (starts at 10001)
+        const counterRef = db.ref('counters/studentId');
+        const result = await counterRef.transaction((currentValue) => {
+            return (currentValue || 10000) + 1;
+        });
+
+        const newId = String(result.snapshot.val());
+        const newStudent: Student = {
+            id: newId,
+            name: data.name || 'Unknown',
+            school: data.school || 'Unknown',
+            avatar: data.avatar || '👦',
+            stars: 0,
+            grade: normalizeGrade(data.grade),
+            teacherId: data.teacherId
+        };
+
+        // Use the ID as the key for easy lookup
+        await db.ref(`students/${newId}`).set(newStudent);
+        return { success: true, student: newStudent };
+    }
+
+    return { success: false };
   } catch (e) {
+    console.error("Manage student error", e);
     return { success: false, message: 'Connection Error' };
   }
 };
 
-// ✅ Add New Student (Legacy Wrapper)
+// ✅ Add Student Wrapper
 export const addStudent = async (name: string, school: string, avatar: string, grade: string = 'P2', teacherId?: string): Promise<Student | null> => {
-  const result = await manageStudent({ action: 'add', name, school, avatar, grade: normalizeGrade(grade), teacherId });
-  if (result.success && result.student) {
-      return result.student;
-  }
-  if (result.success && (result as any).id) {
-      return result as any;
-  }
-  return null;
+  const result = await manageStudent({ action: 'add', name, school, avatar, grade, teacherId });
+  return result.student || null;
 };
 
-// ✅ Get Teacher Dashboard Data
+// ---------------------------------------------------------------------------
+// 🟢 DASHBOARD DATA
+// ---------------------------------------------------------------------------
+
+// ✅ Get Teacher Dashboard Data (Fetch All and Filter)
 export const getTeacherDashboard = async (school: string) => {
-  if (!GOOGLE_SCRIPT_URL) return { students: [], results: [], assignments: [], questions: [] };
-  
   try {
-    const response = await fetch(getUrl(`?type=teacher_data&school=${school}`));
-    const data = await response.json();
+    const [studentsSnap, questionsSnap, resultsSnap, assignmentsSnap] = await Promise.all([
+        db.ref('students').orderByChild('school').equalTo(school).once('value'), // Indexing recommended
+        db.ref('questions').once('value'), // Get all questions to filter later (or use specific query)
+        db.ref('results').once('value'),   // Get all results
+        db.ref('assignments').orderByChild('school').equalTo(school).once('value')
+    ]);
 
-    const cleanQuestions = (data.questions || []).map((q: any) => ({
-      ...q,
-      id: String(q.id).trim(),
-      text: String(q.text || ''), 
-      subject: normalizeSubject(q.subject), 
-      choices: q.choices.map((c: any) => ({ 
-          ...c, 
-          id: String(c.id), 
-          text: String(c.text || '') 
-      })),
-      correctChoiceId: String(q.correctChoiceId),
-      grade: normalizeGrade(q.grade || 'ALL'),
-      school: q.school || 'CENTER',
-      teacherId: q.teacherId ? String(q.teacherId) : undefined
-    }));
+    const students = snapshotToArray<Student>(studentsSnap);
     
-    const cleanStudents = (data.students || []).map((s: any) => ({
-      ...s,
-      id: String(s.id).trim(),
-      grade: normalizeGrade(s.grade),
-      teacherId: s.teacherId ? String(s.teacherId) : undefined
-    }));
+    // For questions, we want own school + CENTER + Admin
+    let questions = snapshotToArray<Question>(questionsSnap);
+    questions = questions.filter(q => q.school === school || q.school === 'CENTER' || q.school === 'Admin');
 
-    const cleanAssignments = (data.assignments || []).map((a: any) => ({
-      id: String(a.id),
-      school: String(a.school),
-      subject: normalizeSubject(a.subject),
-      grade: normalizeGrade(a.grade || 'ALL'), 
-      questionCount: Number(a.questionCount),
-      deadline: String(a.deadline).split('T')[0],
-      createdBy: String(a.createdBy)
-    }));
+    const results = snapshotToArray<ExamResult>(resultsSnap);
+    const assignments = snapshotToArray<Assignment>(assignmentsSnap);
 
-    return { ...data, students: cleanStudents, questions: cleanQuestions, assignments: cleanAssignments };
+    return { students, questions, results, assignments };
   } catch (e) {
+    console.error(e);
     return { students: [], results: [], assignments: [], questions: [] };
   }
 }
 
+// ✅ Fetch Initial App Data (For Student App)
+export const fetchAppData = async (): Promise<AppData> => {
+  try {
+    const [studentsSnap, questionsSnap, resultsSnap, assignmentsSnap] = await Promise.all([
+        db.ref('students').once('value'),
+        db.ref('questions').once('value'),
+        db.ref('results').once('value'),
+        db.ref('assignments').once('value')
+    ]);
+
+    let students = snapshotToArray<Student>(studentsSnap);
+    if (students.length === 0) students = MOCK_STUDENTS; // Fallback for empty DB
+
+    let questions = snapshotToArray<Question>(questionsSnap);
+    if (questions.length === 0) questions = MOCK_QUESTIONS; // Fallback
+
+    const results = snapshotToArray<ExamResult>(resultsSnap);
+    const assignments = snapshotToArray<Assignment>(assignmentsSnap);
+
+    return { students, questions, results, assignments };
+  } catch (error) {
+    console.error("Fetch error:", error);
+    return { students: MOCK_STUDENTS, questions: MOCK_QUESTIONS, results: [], assignments: [] };
+  }
+};
+
+// ---------------------------------------------------------------------------
+// 🟢 QUESTION BANK
+// ---------------------------------------------------------------------------
+
 // ✅ Add Question
 export const addQuestion = async (question: any): Promise<boolean> => {
-  if (!GOOGLE_SCRIPT_URL) return false;
   try {
-    const subjectCode = convertToCode(question.subject);
-    const params = new URLSearchParams({
-      type: 'add_question',
-      subject: subjectCode, 
+    const newRef = db.ref('questions').push();
+    await newRef.set({
+      id: newRef.key,
+      subject: question.subject,
       text: question.text,
       image: question.image || '',
-      c1: question.c1, c2: question.c2, c3: question.c3, c4: question.c4,
-      correct: question.correct,
+      choices: [
+          { id: '1', text: question.c1 },
+          { id: '2', text: question.c2 },
+          { id: '3', text: question.c3 },
+          { id: '4', text: question.c4 },
+      ],
+      correctChoiceId: question.correct,
       explanation: question.explanation,
-      grade: normalizeGrade(question.grade || 'P2'), // Normalize grade on save
+      grade: normalizeGrade(question.grade),
       school: question.school || '',
       teacherId: question.teacherId || ''
     });
-
-    await fetch(getUrl(`?${params.toString()}`));
     return true;
   } catch (e) {
     return false;
@@ -229,24 +283,23 @@ export const addQuestion = async (question: any): Promise<boolean> => {
 
 // ✅ Edit Question
 export const editQuestion = async (question: any): Promise<boolean> => {
-  if (!GOOGLE_SCRIPT_URL) return false;
   try {
-    const subjectCode = convertToCode(question.subject);
-    const params = new URLSearchParams({
-      type: 'edit_question',
-      id: question.id,
-      subject: subjectCode,
+    if (!question.id) return false;
+    await db.ref(`questions/${question.id}`).update({
+      subject: question.subject,
       text: question.text,
       image: question.image || '',
-      c1: question.c1, c2: question.c2, c3: question.c3, c4: question.c4,
-      correct: question.correct,
+      choices: [
+          { id: '1', text: question.c1 },
+          { id: '2', text: question.c2 },
+          { id: '3', text: question.c3 },
+          { id: '4', text: question.c4 },
+      ],
+      correctChoiceId: question.correct,
       explanation: question.explanation,
-      grade: normalizeGrade(question.grade || 'P2')
+      grade: normalizeGrade(question.grade)
     });
-    
-    const response = await fetch(getUrl(`?${params.toString()}`));
-    const result = await response.json();
-    return result.success;
+    return true;
   } catch (e) {
     return false;
   }
@@ -254,34 +307,31 @@ export const editQuestion = async (question: any): Promise<boolean> => {
 
 // ✅ Delete Question
 export const deleteQuestion = async (id: string): Promise<boolean> => {
-  if (!GOOGLE_SCRIPT_URL) return false;
   try {
-    const response = await fetch(getUrl(`?type=delete_question&id=${encodeURIComponent(id)}`));
-    try {
-        const result = await response.json();
-        return result.success !== false;
-    } catch {
-        return response.ok;
-    }
+    await db.ref(`questions/${id}`).remove();
+    return true;
   } catch (e) {
     return false;
   }
 };
 
+// ---------------------------------------------------------------------------
+// 🟢 ASSIGNMENTS
+// ---------------------------------------------------------------------------
+
 // ✅ Add Assignment
 export const addAssignment = async (school: string, subject: string, grade: string, questionCount: number, deadline: string, createdBy: string): Promise<boolean> => {
-  if (!GOOGLE_SCRIPT_URL) return false;
   try {
-    const params = new URLSearchParams({
-        type: 'add_assignment',
+    const newRef = db.ref('assignments').push();
+    await newRef.set({
+        id: newRef.key,
         school,
         subject,
-        grade: normalizeGrade(grade || 'P2'), 
-        questionCount: String(questionCount),
+        grade: normalizeGrade(grade), 
+        questionCount: Number(questionCount),
         deadline,
         createdBy
     });
-    await fetch(getUrl(`?${params.toString()}`));
     return true;
   } catch (e) {
     return false;
@@ -290,90 +340,44 @@ export const addAssignment = async (school: string, subject: string, grade: stri
 
 // ✅ Delete Assignment
 export const deleteAssignment = async (id: string): Promise<boolean> => {
-  if (!GOOGLE_SCRIPT_URL) return false;
   try {
-    const response = await fetch(getUrl(`?type=delete_assignment&id=${encodeURIComponent(id)}`));
-    const text = await response.text();
-    try {
-        const result = JSON.parse(text);
-        return result.success !== false;
-    } catch {
-        return response.ok;
-    }
-  } catch (e) {
-    console.error("Delete assignment error", e);
-    return false;
-  }
-};
-
-// ✅ Save Score
-export const saveScore = async (studentId: string, studentName: string, school: string, score: number, total: number, subject: string, assignmentId?: string) => {
-  if (!GOOGLE_SCRIPT_URL) return false;
-  try {
-    const aidParam = assignmentId ? `&assignmentId=${encodeURIComponent(assignmentId)}` : '';
-    const url = `?type=save_score&studentId=${studentId}&studentName=${encodeURIComponent(studentName)}&school=${encodeURIComponent(school)}&score=${score}&total=${total}&subject=${encodeURIComponent(subject)}${aidParam}`;
-    await fetch(getUrl(url));
+    await db.ref(`assignments/${id}`).remove();
     return true;
   } catch (e) {
     return false;
   }
-}
-
-// ✅ Fetch Initial App Data
-export const fetchAppData = async (): Promise<AppData> => {
-  if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === '') {
-    return { students: MOCK_STUDENTS, questions: MOCK_QUESTIONS, results: [], assignments: [] };
-  }
-  try {
-    const response = await fetch(getUrl(`?type=json`));
-    const textData = await response.text();
-    if (textData.trim().startsWith('<')) throw new Error('Invalid JSON response');
-    const data = JSON.parse(textData);
-    
-    const cleanStudents = (data.students || []).map((s: any) => ({
-      ...s, id: String(s.id).trim(), stars: Number(s.stars) || 0, grade: normalizeGrade(s.grade),
-      teacherId: s.teacherId ? String(s.teacherId) : undefined
-    }));
-    
-    // Updated: Ensure question has a school property even if missing in JSON
-    const cleanQuestions = (data.questions || []).map((q: any) => ({
-      ...q, 
-      id: String(q.id).trim(), 
-      text: String(q.text || ''), 
-      subject: normalizeSubject(q.subject), 
-      choices: q.choices.map((c: any) => ({ 
-          ...c, 
-          id: String(c.id),
-          text: String(c.text || '') 
-      })),
-      correctChoiceId: String(q.correctChoiceId),
-      grade: normalizeGrade(q.grade || 'ALL'), // Force normalize grade
-      school: q.school || 'CENTER', 
-      teacherId: q.teacherId ? String(q.teacherId) : undefined
-    }));
-
-    const cleanResults = (data.results || []).map((r: any) => ({
-      id: Math.random().toString(36).substr(2, 9),
-      studentId: String(r.studentId),
-      subject: normalizeSubject(r.subject),
-      score: Number(r.score),
-      totalQuestions: Number(r.total),
-      timestamp: new Date(r.timestamp).getTime(),
-      assignmentId: r.assignmentId !== '-' ? r.assignmentId : undefined
-    }));
-    
-    const cleanAssignments = (data.assignments || []).map((a: any) => ({
-      id: String(a.id), 
-      school: String(a.school), 
-      subject: normalizeSubject(a.subject),
-      grade: normalizeGrade(a.grade || 'ALL'), 
-      questionCount: Number(a.questionCount), 
-      deadline: String(a.deadline).split('T')[0], 
-      createdBy: String(a.createdBy)
-    }));
-
-    return { students: cleanStudents, questions: cleanQuestions, results: cleanResults, assignments: cleanAssignments };
-  } catch (error) {
-    return { students: MOCK_STUDENTS, questions: MOCK_QUESTIONS, results: [], assignments: [] };
-  }
 };
+
+// ---------------------------------------------------------------------------
+// 🟢 SCORES & RESULTS
+// ---------------------------------------------------------------------------
+
+// ✅ Save Score
+export const saveScore = async (studentId: string, studentName: string, school: string, score: number, total: number, subject: string, assignmentId?: string) => {
+  try {
+    // 1. Save Result History
+    const newResultRef = db.ref('results').push();
+    await newResultRef.set({
+        id: newResultRef.key,
+        studentId,
+        studentName,
+        school,
+        score,
+        totalQuestions: total,
+        subject,
+        assignmentId: assignmentId || '-',
+        timestamp: firebase.database.ServerValue.TIMESTAMP
+    });
+
+    // 2. Update Student Stars
+    const studentRef = db.ref(`students/${studentId}`);
+    await studentRef.child('stars').transaction((currentStars) => {
+        return (currentStars || 0) + score;
+    });
+
+    return true;
+  } catch (e) {
+    console.error("Save score error", e);
+    return false;
+  }
+}
