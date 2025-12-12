@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Question } from '../types';
-import { CheckCircle, XCircle, ArrowRight, ArrowLeft, Volume2, Loader2, StopCircle } from 'lucide-react';
+import { CheckCircle, XCircle, ArrowRight, ArrowLeft, Volume2, VolumeX, Loader2 } from 'lucide-react';
 import { speak, playSFX, stopSpeaking } from '../utils/soundUtils';
 
 interface PracticeModeProps {
@@ -17,6 +17,9 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [score, setScore] = useState(0);
   const [loading, setLoading] = useState(true);
+  
+  // 🔊 State สำหรับเปิด/ปิดเสียงอ่านอัตโนมัติ (Default = True)
+  const [isAutoPlay, setIsAutoPlay] = useState(true);
 
   const choiceLabels = ['ก', 'ข', 'ค', 'ง']; 
   const normalizeId = (id: any) => String(id).trim();
@@ -31,7 +34,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
   useEffect(() => {
     if (allQuestions && allQuestions.length > 0) {
         setLoading(true);
-        // 1. Shuffle Questions (สุ่มลำดับโจทย์)
+        // 1. Shuffle Questions
         const shuffledQuestions = [...allQuestions].sort(() => 0.5 - Math.random());
         // 2. Limit to 10
         const limitedQuestions = shuffledQuestions.slice(0, 10);
@@ -75,30 +78,50 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
     }
   }, [allQuestions]);
 
-  // 🔊 Auto-read Question & Choices when question changes
+  // ฟังก์ชันช่วยอ่านโจทย์และตัวเลือก
+  const playQuestionAudio = (q: Question) => {
+      stopSpeaking();
+      // 1. Read Question
+      speak("คำถาม.. " + q.text, true);
+      // 2. Read Choices
+      q.choices.forEach((c, idx) => {
+          const label = choiceLabels[idx];
+          speak(`ตัวเลือก ${label}.. ${c.text}`, false);
+      });
+  };
+
+  // 🔊 Effect: Auto-read when question changes (Only if isAutoPlay is true)
   useEffect(() => {
       if (!loading && questions.length > 0) {
           const currentQ = questions[currentIndex];
           
-          stopSpeaking(); // Stop previous audio
-          
-          // 1. Read Question (Interrupt previous)
-          speak("คำถาม.. " + currentQ.text, true);
-          
-          // 2. Read Choices (Queue them up using interrupt=false)
-          currentQ.choices.forEach((c, idx) => {
-              const label = choiceLabels[idx];
-              speak(`ตัวเลือก ${label}.. ${c.text}`, false);
-          });
+          if (isAutoPlay) {
+              playQuestionAudio(currentQ);
+          } else {
+              stopSpeaking();
+          }
       }
-  }, [currentIndex, loading, questions]);
+  }, [currentIndex, loading, questions]); // ลบ isAutoPlay ออกเพื่อไม่ให้ Trigger ตอนกด Toggle, ให้กด Toggle แล้วจัดการเอง
+
+  const toggleAutoPlay = () => {
+      if (isAutoPlay) {
+          // ถ้าเปิดอยู่ -> ปิดเสียงทันที
+          setIsAutoPlay(false);
+          stopSpeaking();
+      } else {
+          // ถ้าปิดอยู่ -> เปิดเสียงและเริ่มอ่านข้อปัจจุบันทันที
+          setIsAutoPlay(true);
+          const currentQ = questions[currentIndex];
+          if (currentQ) playQuestionAudio(currentQ);
+      }
+  };
 
   const currentQuestion = questions[currentIndex];
 
   const handleChoiceSelect = (choiceId: string) => {
     if (isSubmitted) return; 
     
-    // Stop reading choices immediately when user selects answer
+    // Stop reading choices immediately
     stopSpeaking();
 
     setSelectedChoice(choiceId);
@@ -109,14 +132,14 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
     if (isCorrect) {
       setScore(prev => prev + 1);
       playSFX('CORRECT');
-      speak("ถูกต้องครับ เก่งมาก", true);
+      if (isAutoPlay) speak("ถูกต้องครับ เก่งมาก", true);
     } else {
       playSFX('WRONG');
-      speak("ยังไม่ถูกครับ มาดูเฉลยกัน", true);
+      if (isAutoPlay) speak("ยังไม่ถูกครับ มาดูเฉลยกัน", true);
     }
 
-    // Read Explanation after feedback
-    if (currentQuestion.explanation) {
+    // Read Explanation only if AutoPlay is ON
+    if (currentQuestion.explanation && isAutoPlay) {
         speak("คำอธิบาย.. " + currentQuestion.explanation, false);
     }
   };
@@ -132,6 +155,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
     }
   };
 
+  // ปุ่มกดฟังเฉพาะจุด (ทำงานเสมอ แม้ปิด AutoPlay)
   const handleManualSpeak = (text: string) => {
       stopSpeaking();
       speak(text, true);
@@ -183,17 +207,19 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
       {/* Question Card */}
       <div className="bg-white rounded-[32px] shadow-lg p-6 md:p-8 mb-6 border-b-4 border-gray-200 relative overflow-hidden">
         
-        {/* Header Tags & Speaker */}
+        {/* Header Tags & Speaker Toggle */}
         <div className="flex justify-between items-start mb-4">
             <div className="inline-block bg-blue-100 text-blue-700 text-xs font-bold px-3 py-1 rounded-full">
             {currentQuestion.subject}
             </div>
+            
+            {/* 🔊 ปุ่มเปิด/ปิดเสียง (Toggle) */}
             <button 
-                onClick={() => handleManualSpeak(currentQuestion.text)}
-                className="bg-blue-50 text-blue-600 p-2 rounded-full hover:bg-blue-100 transition shadow-sm"
-                title="อ่านโจทย์"
+                onClick={toggleAutoPlay}
+                className={`p-2 rounded-full transition shadow-sm border-2 ${isAutoPlay ? 'bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100' : 'bg-gray-100 text-gray-400 border-gray-200 hover:bg-gray-200'}`}
+                title={isAutoPlay ? "ปิดเสียงอ่านอัตโนมัติ" : "เปิดเสียงอ่านอัตโนมัติ"}
             >
-                <Volume2 size={24} />
+                {isAutoPlay ? <Volume2 size={24} /> : <VolumeX size={24} />}
             </button>
         </div>
         
@@ -269,7 +295,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
                     )}
                   </button>
                   
-                  {/* Manual Choice Speak Button */}
+                  {/* Manual Choice Speak Button (เสมอทำงานเมื่อกดเอง) */}
                   <button 
                       onClick={(e) => { e.stopPropagation(); handleManualSpeak(choice.text); }}
                       className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-colors flex-shrink-0 bg-white shadow-sm border border-gray-100"
