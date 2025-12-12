@@ -2,9 +2,9 @@
 import { Student, Question, Subject } from './types';
 
 export const MOCK_STUDENTS: Student[] = [
-  { id: '10001', name: 'ด.ช. รักเรียน เพียรศึกษา', avatar: '👦', stars: 120, grade: 'P2' },
-  { id: '10002', name: 'ด.ญ. ใจดี มีวินัย', avatar: '👧', stars: 150, grade: 'P2' },
-  { id: '10004', name: 'น้องเล็ก ป.1', avatar: '👶', stars: 50, grade: 'P1' },
+  { id: '10001', name: 'ด.ช. รักเรียน เพียรศึกษา', avatar: '👦', stars: 120, grade: 'P2', school: 'Admin School' },
+  { id: '10002', name: 'ด.ญ. ใจดี มีวินัย', avatar: '👧', stars: 150, grade: 'P2', school: 'Admin School' },
+  { id: '10004', name: 'น้องเล็ก ป.1', avatar: '👶', stars: 50, grade: 'P1', school: 'Admin School' },
 ];
 
 export const MOCK_QUESTIONS: Question[] = [

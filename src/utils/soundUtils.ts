@@ -21,15 +21,29 @@ const SOUNDS = {
 let bgmAudio: HTMLAudioElement | null = null;
 let isMuted = false;
 
-export const speak = (text: string) => {
+// ปรับปรุงฟังก์ชัน speak ให้รองรับการต่อคิว (interrupt = false)
+export const speak = (text: string, interrupt: boolean = true) => {
 if (isMuted) return;
 if ('speechSynthesis' in window) {
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
+  if (interrupt) {
+      window.speechSynthesis.cancel(); // หยุดพูดอันเก่าทันที
+  }
+  
+  // ลบตัวอักษรพิเศษที่อาจทำให้อ่านผิด
+  const cleanText = text.replace(/_/g, ' ').replace(/-/g, ' ');
+  
+  const utterance = new SpeechSynthesisUtterance(cleanText);
   utterance.lang = 'th-TH';
-  utterance.rate = 1.0;
+  utterance.rate = 0.9; // พูดช้าลงนิดหน่อยให้เด็กฟังทัน
   window.speechSynthesis.speak(utterance);
 }
+};
+
+// ฟังก์ชันหยุดพูด (ใช้เมื่อเปลี่ยนหน้า หรือกดตอบ)
+export const stopSpeaking = () => {
+  if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+  }
 };
 
 export const playBGM = (type: 'LOBBY' | 'GAME' | 'VICTORY') => {
@@ -93,6 +107,7 @@ export const toggleMuteSystem = (muteState: boolean) => {
   isMuted = muteState;
   if (isMuted) {
       if (bgmAudio) bgmAudio.pause();
+      stopSpeaking(); // หยุดพูดด้วยถ้าปิดเสียง
   } else {
       if (bgmAudio) bgmAudio.play().catch(() => {});
   }

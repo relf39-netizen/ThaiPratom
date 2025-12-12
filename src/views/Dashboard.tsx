@@ -23,20 +23,19 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
 
   useEffect(() => {
       const load = async () => {
-          if (student.school) {
-              // 1. Fetch subjects created by the teacher
-              const custom = await getSchoolSubjects(student.school);
-              
-              // 2. Identify Student Grade (Default to P2 if missing)
-              const studentGrade = student.grade || 'P2';
-              
-              // 3. STRICT FILTER: Only show subjects that match the student's grade
-              const filtered = custom.filter(s => s.grade === studentGrade);
-              
-              setDisplaySubjects(filtered);
-          } else {
-              setDisplaySubjects([]);
-          }
+          // 1. Determine School (Fallback to 'Admin School' if missing to ensure data shows up)
+          const targetSchool = student.school || 'Admin School';
+          
+          // 2. Fetch subjects for that school
+          const custom = await getSchoolSubjects(targetSchool);
+          
+          // 3. Identify Student Grade (Default to P2 if missing)
+          const studentGrade = student.grade || 'P2';
+          
+          // 4. FILTER: Show subjects that match Grade OR are for ALL grades
+          const filtered = custom.filter(s => s.grade === studentGrade || s.grade === 'ALL');
+          
+          setDisplaySubjects(filtered);
           setLoadingSubjects(false);
       };
       load();
