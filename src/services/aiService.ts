@@ -38,7 +38,7 @@ export const generateQuestionWithAI = async (
   }
 
   const ai = new GoogleGenAI({ apiKey: apiKey });
-  const model = "gemini-2.5-flash";
+  const model = "gemini-2.5-flash"; // ใช้โมเดล Flash เพื่อความเร็วและประหยัดโควต้า
   
   // 📝 Prompt: สั่งให้ AI สร้างโจทย์พร้อมระบุเรื่องรูปภาพสำหรับเด็กเล็ก
   const prompt = `
@@ -118,20 +118,39 @@ export const generateQuestionWithAI = async (
       console.warn(`AI Generation Attempt ${attempt} failed:`, error);
       lastError = error;
 
+      // ตรวจสอบ Error 429 หรือ Quota Exceeded
+      const isQuotaError = 
+        error?.status === 429 || 
+        error?.message?.includes('429') || 
+        error?.message?.includes('RESOURCE_EXHAUSTED') ||
+        error?.message?.includes('quota');
+
       const isOverloaded = 
         error?.status === 503 || 
         error?.message?.includes('overloaded') || 
         error?.message?.includes('UNAVAILABLE');
 
-      if (isOverloaded && attempt < MAX_RETRIES) {
-        console.log(`Model overloaded. Retrying in ${attempt * 2} seconds...`);
-        await delay(attempt * 2000); 
+      if ((isQuotaError || isOverloaded) && attempt < MAX_RETRIES) {
+        // ถ้าติด Limit ให้รอนานขึ้น (5 วินาที * รอบที่ลอง)
+        const waitTime = 5000 * attempt;
+        console.log(`Quota hit. Waiting ${waitTime/1000}s before retry...`);
+        await delay(waitTime); 
         continue;
       }
+      
+      // ถ้าไม่ใช่ Error ที่ควรรอ หรือครบจำนวนรอบแล้ว ให้หลุด Loop
       break;
     }
   }
 
-  console.error("AI Generation Failed after retries:", lastError);
-  throw new Error("AI กำลังทำงานหนัก (Server Overloaded) กรุณาลองใหม่อีกครั้งในอีกสักครู่");
+  // จัดการ Error Message ให้ผู้ใช้เข้าใจง่าย
+  let userMessage = "ไม่สามารถสร้างโจทย์ได้ในขณะนี้";
+  if (lastError?.message?.includes('429') || lastError?.message?.includes('RESOURCE_EXHAUSTED')) {
+      userMessage = "โควต้า AI เต็มชั่วคราว (429) กรุณารอประมาณ 1 นาทีแล้วลองใหม่";
+  } else if (lastError?.message?.includes('API Key')) {
+      userMessage = "API Key ไม่ถูกต้อง กรุณาตรวจสอบ";
+  }
+
+  console.error("AI Generation Failed:", lastError);
+  throw new Error(userMessage);
 };
