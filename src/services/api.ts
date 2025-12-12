@@ -59,12 +59,8 @@ export const teacherLogin = async (username: string, password: string): Promise<
     }
 
     // 🟢 EMERGENCY RECOVERY:
-    // ถ้าหา User "admin" ไม่เจอเลย (เพราะเผลอลบไป) และกรอกรหัส admin/admin
-    // ให้สร้าง Admin ใหม่ทันที ไม่ว่าจะมีครูคนอื่นอยู่หรือไม่
     if (username === 'admin' && password === 'admin') {
-        // เช็คอีกรอบว่าไม่มี admin จริงๆ ใช่ไหม (กันพลาด create ซ้ำถ้า password ผิด)
         const adminExists = teachers.some(t => t.username === 'admin');
-        
         if (!adminExists) {
             const newTeacherRef = db.ref('teachers').push();
             const newTeacher: Teacher = {
@@ -144,7 +140,6 @@ export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', i
   try {
     if (data.action === 'delete' && data.id) {
         await db.ref(`students/${data.id}`).remove();
-        // Also remove results? Optional.
         return { success: true };
     }
 
@@ -159,7 +154,6 @@ export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', i
     }
 
     if (data.action === 'add') {
-        // Transaction to generate 5-digit ID (starts at 10001)
         const counterRef = db.ref('counters/studentId');
         const result = await counterRef.transaction((currentValue) => {
             return (currentValue || 10000) + 1;
@@ -173,10 +167,10 @@ export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', i
             avatar: data.avatar || '👦',
             stars: 0,
             grade: normalizeGrade(data.grade),
-            teacherId: data.teacherId
+            teacherId: data.teacherId,
+            inventory: []
         };
 
-        // Use the ID as the key for easy lookup
         await db.ref(`students/${newId}`).set(newStudent);
         return { success: true, student: newStudent };
     }
@@ -194,26 +188,53 @@ export const addStudent = async (name: string, school: string, avatar: string, g
   return result.student || null;
 };
 
+// ✅ Redeem Reward
+export const redeemReward = async (studentId: string, itemCode: string, cost: number): Promise<{success: boolean, message: string}> => {
+    try {
+        const studentRef = db.ref(`students/${studentId}`);
+        const snapshot = await studentRef.once('value');
+        const student = snapshot.val() as Student;
+
+        if (!student) return { success: false, message: 'ไม่พบข้อมูลนักเรียน' };
+
+        if (student.stars < cost) {
+            return { success: false, message: 'ดาวสะสมไม่เพียงพอ' };
+        }
+
+        const currentInventory = student.inventory || [];
+        if (currentInventory.includes(itemCode)) {
+            return { success: false, message: 'มีไอเทมนี้แล้ว' };
+        }
+
+        // Update Transaction
+        await studentRef.update({
+            stars: student.stars - cost,
+            inventory: [...currentInventory, itemCode]
+        });
+
+        return { success: true, message: 'แลกของรางวัลสำเร็จ!' };
+    } catch (e) {
+        console.error(e);
+        return { success: false, message: 'เกิดข้อผิดพลาดในการเชื่อมต่อ' };
+    }
+};
+
 // ---------------------------------------------------------------------------
 // 🟢 DASHBOARD DATA
 // ---------------------------------------------------------------------------
 
-// ✅ Get Teacher Dashboard Data (Fetch All and Filter)
 export const getTeacherDashboard = async (school: string) => {
   try {
     const [studentsSnap, questionsSnap, resultsSnap, assignmentsSnap] = await Promise.all([
-        db.ref('students').orderByChild('school').equalTo(school).once('value'), // Indexing recommended
-        db.ref('questions').once('value'), // Get all questions to filter later (or use specific query)
-        db.ref('results').once('value'),   // Get all results
+        db.ref('students').orderByChild('school').equalTo(school).once('value'), 
+        db.ref('questions').once('value'), 
+        db.ref('results').once('value'),   
         db.ref('assignments').orderByChild('school').equalTo(school).once('value')
     ]);
 
     const students = snapshotToArray<Student>(studentsSnap);
-    
-    // For questions, we want own school + CENTER + Admin
     let questions = snapshotToArray<Question>(questionsSnap);
     questions = questions.filter(q => q.school === school || q.school === 'CENTER' || q.school === 'Admin');
-
     const results = snapshotToArray<ExamResult>(resultsSnap);
     const assignments = snapshotToArray<Assignment>(assignmentsSnap);
 
@@ -224,7 +245,6 @@ export const getTeacherDashboard = async (school: string) => {
   }
 }
 
-// ✅ Fetch Initial App Data (For Student App)
 export const fetchAppData = async (): Promise<AppData> => {
   try {
     const [studentsSnap, questionsSnap, resultsSnap, assignmentsSnap] = await Promise.all([
@@ -235,10 +255,10 @@ export const fetchAppData = async (): Promise<AppData> => {
     ]);
 
     let students = snapshotToArray<Student>(studentsSnap);
-    if (students.length === 0) students = MOCK_STUDENTS; // Fallback for empty DB
+    if (students.length === 0) students = MOCK_STUDENTS; 
 
     let questions = snapshotToArray<Question>(questionsSnap);
-    if (questions.length === 0) questions = MOCK_QUESTIONS; // Fallback
+    if (questions.length === 0) questions = MOCK_QUESTIONS; 
 
     const results = snapshotToArray<ExamResult>(resultsSnap);
     const assignments = snapshotToArray<Assignment>(assignmentsSnap);
@@ -254,7 +274,6 @@ export const fetchAppData = async (): Promise<AppData> => {
 // 🟢 QUESTION BANK
 // ---------------------------------------------------------------------------
 
-// ✅ Add Question
 export const addQuestion = async (question: any): Promise<boolean> => {
   try {
     const newRef = db.ref('questions').push();
@@ -281,7 +300,6 @@ export const addQuestion = async (question: any): Promise<boolean> => {
   }
 };
 
-// ✅ Edit Question
 export const editQuestion = async (question: any): Promise<boolean> => {
   try {
     if (!question.id) return false;
@@ -305,7 +323,6 @@ export const editQuestion = async (question: any): Promise<boolean> => {
   }
 };
 
-// ✅ Delete Question
 export const deleteQuestion = async (id: string): Promise<boolean> => {
   try {
     await db.ref(`questions/${id}`).remove();
@@ -319,7 +336,6 @@ export const deleteQuestion = async (id: string): Promise<boolean> => {
 // 🟢 ASSIGNMENTS
 // ---------------------------------------------------------------------------
 
-// ✅ Add Assignment
 export const addAssignment = async (school: string, subject: string, grade: string, questionCount: number, deadline: string, createdBy: string): Promise<boolean> => {
   try {
     const newRef = db.ref('assignments').push();
@@ -338,7 +354,6 @@ export const addAssignment = async (school: string, subject: string, grade: stri
   }
 };
 
-// ✅ Delete Assignment
 export const deleteAssignment = async (id: string): Promise<boolean> => {
   try {
     await db.ref(`assignments/${id}`).remove();
@@ -352,10 +367,8 @@ export const deleteAssignment = async (id: string): Promise<boolean> => {
 // 🟢 SCORES & RESULTS
 // ---------------------------------------------------------------------------
 
-// ✅ Save Score
 export const saveScore = async (studentId: string, studentName: string, school: string, score: number, total: number, subject: string, assignmentId?: string) => {
   try {
-    // 1. Save Result History
     const newResultRef = db.ref('results').push();
     await newResultRef.set({
         id: newResultRef.key,
@@ -369,7 +382,6 @@ export const saveScore = async (studentId: string, studentName: string, school: 
         timestamp: firebase.database.ServerValue.TIMESTAMP
     });
 
-    // 2. Update Student Stars
     const studentRef = db.ref(`students/${studentId}`);
     await studentRef.child('stars').transaction((currentStars) => {
         return (currentStars || 0) + score;

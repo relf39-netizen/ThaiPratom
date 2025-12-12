@@ -11,6 +11,7 @@ import GameMode from './views/GameMode';
 import GameSetup from './views/GameSetup';
 import Results from './views/Results';
 import Stats from './views/Stats';
+import RewardShop from './views/RewardShop'; // Import RewardShop
 import { Student, Question, Teacher, Subject, ExamResult, Assignment } from './types';
 import { fetchAppData, saveScore } from './services/api';
 import { Loader2 } from 'lucide-react';
@@ -167,6 +168,8 @@ const App: React.FC = () => {
         switch (currentPage) {
           case 'dashboard': return <Dashboard student={currentUser!} assignments={assignments} examResults={examResults} onNavigate={setCurrentPage} onStartAssignment={handleStartAssignment} onSelectSubject={handleSelectSubject} />;
           case 'select-subject': return <SubjectSelection onSelectSubject={handleSelectSubject} onBack={() => setCurrentPage('dashboard')} />;
+          case 'shop': // ✅ Reward Shop Route
+            return <RewardShop student={currentUser!} onBack={() => setCurrentPage('dashboard')} onUpdateStudent={(s) => setCurrentUser(s)} />;
           case 'practice':
             let qList = questions;
             const activeSubject = currentAssignment ? currentAssignment.subject : selectedSubject;
@@ -175,22 +178,19 @@ const App: React.FC = () => {
                 const sGrade = (currentUser.grade || 'P2').trim().toUpperCase();
                 const sSchool = (currentUser.school || '').trim();
 
-                // ✅ IMPROVED FILTERING LOGIC (Robust)
                 qList = questions.filter(q => {
-                    // 1. School Check: Matches Student's School OR is 'CENTER'/'Admin' OR is Blank (Global)
+                    // 1. School Check
                     const qSchool = (q.school || 'CENTER').trim(); 
                     const isGlobal = qSchool.toUpperCase() === 'CENTER' || qSchool.toUpperCase() === 'ADMIN' || qSchool === '';
                     const isMySchool = qSchool === sSchool;
                     
                     if (!isGlobal && !isMySchool) return false;
 
-                    // 2. Grade Check: Matches Student's Grade OR is 'ALL'
+                    // 2. Grade Check
                     const qGrade = (q.grade || 'ALL').trim().toUpperCase();
-                    // Allow ALL, allow exact match
                     if (qGrade !== 'ALL' && qGrade !== sGrade) return false;
 
-                    // 3. Subject Check (If selected)
-                    // Normalize both strings to prevent whitespace issues
+                    // 3. Subject Check
                     if (activeSubject) {
                         const subjA = String(activeSubject).trim();
                         const subjB = String(q.subject).trim();
@@ -201,7 +201,7 @@ const App: React.FC = () => {
                 });
             }
 
-            // ✅ Handle Assignment Limits (Shuffle & Slice)
+            // ✅ Handle Assignment Limits
             if (currentAssignment) {
                 const shuffled = [...qList].sort(() => 0.5 - Math.random());
                 if (currentAssignment.questionCount > 0 && currentAssignment.questionCount < shuffled.length) {

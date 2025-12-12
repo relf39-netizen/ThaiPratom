@@ -7,6 +7,7 @@ export interface Student {
   stars: number; 
   grade?: string; 
   teacherId?: string; 
+  inventory?: string[]; // รายรายการไอเทมที่แลกแล้ว
 }
 
 export interface Teacher {
@@ -21,16 +22,14 @@ export interface Teacher {
 
 // Define Subject constants for backward compatibility
 export const Subject = {
-  SPELLING: 'มาตราตัวสะกด',
-  TONES: 'การผันวรรณยุกต์',
-  CLUSTERS: 'คำควบกล้ำ',
-  ROHAN: 'คำที่มี รร',
-  RHYMES: 'คำคล้องจอง',
-  // Fallbacks for older enums if needed
   MATH: 'คณิตศาสตร์',
   THAI: 'ภาษาไทย',
   SCIENCE: 'วิทยาศาสตร์',
-  ENGLISH: 'ภาษาอังกฤษ'
+  ENGLISH: 'ภาษาอังกฤษ',
+  SPELLING: 'การสะกดคำ',
+  TONES: 'วรรณยุกต์',
+  CLUSTERS: 'คำควบกล้ำ',
+  ROHAN: 'ร หัน'
 } as const;
 
 // Allow Subject to be one of the constants OR any string (for custom subjects)

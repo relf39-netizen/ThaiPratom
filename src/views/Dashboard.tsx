@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { BookOpen, Gamepad2, BarChart3, Star, Calendar, CheckCircle, AlertCircle, History, ArrowLeft, Clock, Puzzle, Music, Users, Trees, Link as LinkIcon, Loader2 } from 'lucide-react';
+import { BookOpen, Gamepad2, BarChart3, Star, Calendar, CheckCircle, AlertCircle, History, ArrowLeft, Clock, Puzzle, Music, Users, Trees, Link as LinkIcon, Loader2, ShoppingBag } from 'lucide-react';
 import { Student, Assignment, ExamResult, Subject, SubjectDef } from '../types';
 import { getSchoolSubjects } from '../services/subjectService';
 
@@ -143,11 +143,22 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
                 <span>•</span>
                 <span>{student.school || 'โรงเรียนคุณภาพ'}</span>
             </div>
-            <div className="flex items-center gap-2 bg-white/20 w-fit px-4 py-1.5 rounded-full mx-auto md:mx-0 backdrop-blur-sm border border-white/30 hover:bg-white/30 transition">
-                <Star className="text-yellow-300 fill-yellow-300 drop-shadow" size={20} />
-                <span className="font-bold text-lg">{student.stars}</span>
-                <span className="text-sm opacity-90">คะแนนสะสม</span>
+            
+            <div className="flex flex-wrap gap-2 justify-center md:justify-start">
+                <div className="flex items-center gap-2 bg-white/20 w-fit px-4 py-1.5 rounded-full backdrop-blur-sm border border-white/30 hover:bg-white/30 transition">
+                    <Star className="text-yellow-300 fill-yellow-300 drop-shadow" size={20} />
+                    <span className="font-bold text-lg">{student.stars}</span>
+                    <span className="text-sm opacity-90">คะแนน</span>
+                </div>
+                {/* ปุ่มไปร้านค้า (เฉพาะหน้าจอเล็ก หรือแปะไว้ตรงนี้ให้เด่น) */}
+                <button 
+                    onClick={() => onNavigate('shop')}
+                    className="flex items-center gap-2 bg-white text-pink-600 w-fit px-4 py-1.5 rounded-full font-bold shadow-sm hover:scale-105 transition"
+                >
+                    <ShoppingBag size={18} /> ร้านค้า
+                </button>
             </div>
+
           </div>
         </div>
       </div>
@@ -227,22 +238,27 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
         <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2 font-fun ml-2">
             <Gamepad2 className="text-purple-500 fill-purple-500"/> สนุกกับกิจกรรม
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <button onClick={() => onNavigate('game')} className="group relative bg-white rounded-[24px] p-5 shadow-sm hover:shadow-lg transition-all border-b-8 border-purple-200 hover:border-purple-400 active:border-b-0 active:translate-y-2 flex items-center gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <button onClick={() => onNavigate('shop')} className="col-span-2 md:col-span-1 group relative bg-white rounded-[24px] p-5 shadow-sm hover:shadow-lg transition-all border-b-8 border-pink-200 hover:border-pink-400 active:border-b-0 active:translate-y-2 flex flex-col md:flex-row items-center gap-4 text-center md:text-left">
+              <div className="bg-pink-100 w-14 h-14 rounded-2xl flex items-center justify-center text-pink-600 group-hover:bg-pink-600 group-hover:text-white transition-colors"><ShoppingBag size={32} /></div>
+              <div><h3 className="text-lg font-bold text-gray-800 group-hover:text-pink-600">ร้านค้า</h3><p className="text-gray-400 text-xs group-hover:text-pink-500">แลกของรางวัล</p></div>
+            </button>
+
+            <button onClick={() => onNavigate('game')} className="col-span-2 md:col-span-1 group relative bg-white rounded-[24px] p-5 shadow-sm hover:shadow-lg transition-all border-b-8 border-purple-200 hover:border-purple-400 active:border-b-0 active:translate-y-2 flex flex-col md:flex-row items-center gap-4 text-center md:text-left">
               <div className="bg-purple-100 w-14 h-14 rounded-2xl flex items-center justify-center text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors"><Gamepad2 size={32} /></div>
-              <div className="text-left flex-1">
+              <div className="flex-1">
                   <h3 className="text-lg font-bold text-gray-800 group-hover:text-purple-600">เกมแข่งขัน</h3>
-                  <p className="text-gray-400 text-xs group-hover:text-purple-400">แข่งตอบคำถามกับเพื่อน</p>
+                  <p className="text-gray-400 text-xs group-hover:text-purple-400">แข่งตอบคำถาม</p>
               </div>
-              <div className="absolute top-4 right-4 flex gap-1"><span className="flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span><span className="text-green-600 text-[10px] font-bold">LIVE</span></div>
+              <div className="absolute top-4 right-4 flex gap-1"><span className="flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span></div>
             </button>
-            <button onClick={() => setView('history')} className="group bg-white rounded-[24px] p-5 shadow-sm hover:shadow-lg transition-all border-b-8 border-yellow-200 hover:border-yellow-400 active:border-b-0 active:translate-y-2 flex items-center gap-4">
-              <div className="bg-yellow-100 w-14 h-14 rounded-2xl flex items-center justify-center text-yellow-600 group-hover:bg-yellow-500 group-hover:text-white transition-colors"><History size={28} /></div>
-              <div className="text-left"><h3 className="text-lg font-bold text-gray-800 group-hover:text-yellow-600">ประวัติส่งงาน</h3><p className="text-gray-400 text-xs group-hover:text-yellow-500">งานที่ทำเสร็จแล้ว</p></div>
+            <button onClick={() => setView('history')} className="group bg-white rounded-[24px] p-5 shadow-sm hover:shadow-lg transition-all border-b-8 border-yellow-200 hover:border-yellow-400 active:border-b-0 active:translate-y-2 flex flex-col items-center gap-2">
+              <div className="bg-yellow-100 w-10 h-10 rounded-2xl flex items-center justify-center text-yellow-600"><History size={20} /></div>
+              <h3 className="text-sm font-bold text-gray-800">ประวัติส่งงาน</h3>
             </button>
-            <button onClick={() => onNavigate('stats')} className="group bg-white rounded-[24px] p-5 shadow-sm hover:shadow-lg transition-all border-b-8 border-green-200 hover:border-green-400 active:border-b-0 active:translate-y-2 flex items-center gap-4">
-              <div className="bg-green-100 w-14 h-14 rounded-2xl flex items-center justify-center text-green-600 group-hover:bg-green-500 group-hover:text-white transition-colors"><BarChart3 size={28} /></div>
-              <div className="text-left"><h3 className="text-lg font-bold text-gray-800 group-hover:text-green-600">ผลการเรียน</h3><p className="text-gray-400 text-xs group-hover:text-green-500">เช็คดาวและคะแนน</p></div>
+            <button onClick={() => onNavigate('stats')} className="group bg-white rounded-[24px] p-5 shadow-sm hover:shadow-lg transition-all border-b-8 border-green-200 hover:border-green-400 active:border-b-0 active:translate-y-2 flex flex-col items-center gap-2">
+              <div className="bg-green-100 w-10 h-10 rounded-2xl flex items-center justify-center text-green-600"><BarChart3 size={20} /></div>
+              <h3 className="text-sm font-bold text-gray-800">ผลการเรียน</h3>
             </button>
         </div>
       </div>
