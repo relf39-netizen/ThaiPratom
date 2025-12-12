@@ -1,8 +1,7 @@
 
 // services/api.ts
-
-import { Student, Question, Teacher, Subject, ExamResult, Assignment } from '../types'; 
-import { db, firebase } from './firebaseConfig';
+import { supabase } from './supabaseClient';
+import { Student, Question, Teacher, Subject, ExamResult, Assignment } from '../types';
 import { MOCK_STUDENTS, MOCK_QUESTIONS } from '../constants';
 
 export interface AppData {
@@ -12,116 +11,67 @@ export interface AppData {
   assignments: Assignment[];
 }
 
-// 🔄 Helper: Convert Firebase Object to Array
-const snapshotToArray = <T>(snapshot: firebase.database.DataSnapshot | null): T[] => {
-  if (!snapshot || !snapshot.val()) return [];
-  const val = snapshot.val();
-  if (Array.isArray(val)) return val.filter(v => v); // Handle if it's stored as array
-  return Object.keys(val).map(key => ({
-    ...val[key],
-    id: key // Ensure ID matches the key
-  }));
-};
-
-// 🔄 Helper: Normalize Grade
-const normalizeGrade = (raw: any): string => {
-  const s = String(raw).trim();
-  if (!s || s === 'undefined' || s === 'null') return 'P2'; 
-  const upper = s.toUpperCase();
-  if (upper === 'ALL') return 'ALL';
-  if (upper.startsWith('TEACHER')) return 'TEACHER';
-  if (upper.startsWith('ADMIN')) return 'ADMIN';
-  const match = s.match(/\d+/);
-  if (match) {
-      return `P${match[0]}`; 
-  }
-  return 'P2'; 
-};
-
 // ---------------------------------------------------------------------------
 // 🟢 TEACHER ACTIONS
 // ---------------------------------------------------------------------------
 
-// ✅ Teacher Login (Firebase)
 export const teacherLogin = async (username: string, password: string): Promise<{success: boolean, teacher?: Teacher}> => {
   try {
-    // 1. Try to find teacher by username
-    const snapshot = await db.ref('teachers')
-      .orderByChild('username')
-      .equalTo(username)
-      .once('value');
+    const { data, error } = await supabase
+      .from('teachers')
+      .select('*')
+      .eq('username', username)
+      .eq('password', password) // In production, use hashed passwords!
+      .single();
 
-    const teachers = snapshotToArray<Teacher>(snapshot);
-    const teacher = teachers.find(t => t.password === password);
-
-    if (teacher) {
-      return { success: true, teacher };
+    if (error || !data) {
+      // Fallback for Admin emergency
+      if (username === 'admin' && password === 'admin') {
+         return { 
+             success: true, 
+             teacher: { id: 'admin', name: 'Admin', username: 'admin', school: 'Admin', role: 'ADMIN' } 
+         };
+      }
+      return { success: false };
     }
 
-    // 🟢 EMERGENCY RECOVERY:
-    if (username === 'admin' && password === 'admin') {
-        const adminExists = teachers.some(t => t.username === 'admin');
-        if (!adminExists) {
-            const newTeacherRef = db.ref('teachers').push();
-            const newTeacher: Teacher = {
-                id: newTeacherRef.key as string,
-                name: 'Admin Teacher',
-                username: 'admin',
-                password: 'admin',
-                school: 'Admin School',
-                role: 'ADMIN'
-            };
-            await newTeacherRef.set(newTeacher);
-            return { success: true, teacher: newTeacher };
-        }
-    }
-
-    return { success: false };
+    return { success: true, teacher: data };
   } catch (e) {
     console.error("Login error", e);
     return { success: false };
   }
 };
 
-// ✅ Get All Teachers (Admin)
 export const getTeachers = async (): Promise<Teacher[]> => {
-  try {
-    const snapshot = await db.ref('teachers').once('value');
-    return snapshotToArray<Teacher>(snapshot);
-  } catch (e) {
-    console.error("Get teachers error", e);
-    return [];
-  }
+  const { data } = await supabase.from('teachers').select('*');
+  return data || [];
 };
 
-// ✅ Manage Teacher (Add/Edit/Delete)
 export const manageTeacher = async (data: { action: 'add' | 'edit' | 'delete', id?: string, name?: string, username?: string, password?: string, school?: string }): Promise<{success: boolean, message?: string}> => {
   try {
     if (data.action === 'delete' && data.id) {
-        await db.ref(`teachers/${data.id}`).remove();
+        await supabase.from('teachers').delete().eq('id', data.id);
         return { success: true };
     }
     
     if (data.action === 'add') {
-        const newRef = db.ref('teachers').push();
-        await newRef.set({
-            id: newRef.key,
+        await supabase.from('teachers').insert([{
             name: data.name,
             username: data.username,
             password: data.password,
             school: data.school,
             role: 'TEACHER'
-        });
+        }]);
         return { success: true };
     }
 
     if (data.action === 'edit' && data.id) {
-        await db.ref(`teachers/${data.id}`).update({
+        await supabase.from('teachers').update({
             name: data.name,
             username: data.username,
             password: data.password,
             school: data.school
-        });
+        }).eq('id', data.id);
         return { success: true };
     }
 
@@ -135,82 +85,89 @@ export const manageTeacher = async (data: { action: 'add' | 'edit' | 'delete', i
 // 🟢 STUDENT ACTIONS
 // ---------------------------------------------------------------------------
 
-// ✅ Manage Student (Add/Edit/Delete)
-export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', id?: string, name?: string, school?: string, avatar?: string, grade?: string, teacherId?: string }): Promise<{success: boolean, student?: Student, message?: string, rawError?: boolean}> => {
+const generateStudentId = async (): Promise<string> => {
+    // Logic: Find max ID and +1
+    const { data } = await supabase.from('students').select('id').order('id', { ascending: false }).limit(1);
+    if (data && data.length > 0) {
+        const lastId = parseInt(data[0].id);
+        if (!isNaN(lastId)) return String(lastId + 1);
+    }
+    return '10001';
+};
+
+export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', id?: string, name?: string, school?: string, avatar?: string, grade?: string, teacherId?: string }): Promise<{success: boolean, student?: Student, message?: string}> => {
   try {
     if (data.action === 'delete' && data.id) {
-        await db.ref(`students/${data.id}`).remove();
+        await supabase.from('students').delete().eq('id', data.id);
         return { success: true };
     }
 
     if (data.action === 'edit' && data.id) {
-        await db.ref(`students/${data.id}`).update({
+        await supabase.from('students').update({
             name: data.name,
             avatar: data.avatar,
-            grade: normalizeGrade(data.grade),
-            teacherId: data.teacherId || null
-        });
+            grade: data.grade,
+            teacher_id: data.teacherId
+        }).eq('id', data.id);
         return { success: true };
     }
 
     if (data.action === 'add') {
-        const counterRef = db.ref('counters/studentId');
-        const result = await counterRef.transaction((currentValue) => {
-            return (currentValue || 10000) + 1;
-        });
-
-        const newId = String(result.snapshot.val());
-        const newStudent: Student = {
+        const newId = await generateStudentId();
+        const newStudent = {
             id: newId,
-            name: data.name || 'Unknown',
-            school: data.school || 'Unknown',
+            name: data.name,
+            school: data.school,
             avatar: data.avatar || '👦',
             stars: 0,
-            grade: normalizeGrade(data.grade),
-            teacherId: data.teacherId,
+            grade: data.grade || 'P2',
+            teacher_id: data.teacherId,
             inventory: []
         };
 
-        await db.ref(`students/${newId}`).set(newStudent);
-        return { success: true, student: newStudent };
+        const { error } = await supabase.from('students').insert([newStudent]);
+        if (error) throw error;
+
+        // Convert DB snake_case to CamelCase for frontend
+        return { success: true, student: { ...newStudent, teacherId: newStudent.teacher_id } };
     }
 
     return { success: false };
-  } catch (e) {
+  } catch (e: any) {
     console.error("Manage student error", e);
-    return { success: false, message: 'Connection Error' };
+    return { success: false, message: e.message };
   }
 };
 
-// ✅ Add Student Wrapper
 export const addStudent = async (name: string, school: string, avatar: string, grade: string = 'P2', teacherId?: string): Promise<Student | null> => {
   const result = await manageStudent({ action: 'add', name, school, avatar, grade, teacherId });
   return result.student || null;
 };
 
-// ✅ Redeem Reward
 export const redeemReward = async (studentId: string, itemCode: string, cost: number): Promise<{success: boolean, message: string}> => {
     try {
-        const studentRef = db.ref(`students/${studentId}`);
-        const snapshot = await studentRef.once('value');
-        const student = snapshot.val() as Student;
-
-        if (!student) return { success: false, message: 'ไม่พบข้อมูลนักเรียน' };
+        // 1. Get current student data
+        const { data: student, error } = await supabase.from('students').select('*').eq('id', studentId).single();
+        
+        if (error || !student) return { success: false, message: 'ไม่พบข้อมูลนักเรียน' };
 
         if (student.stars < cost) {
             return { success: false, message: 'ดาวสะสมไม่เพียงพอ' };
         }
 
         const currentInventory = student.inventory || [];
+        // Check if itemCode is a string in JSON array
         if (currentInventory.includes(itemCode)) {
             return { success: false, message: 'มีไอเทมนี้แล้ว' };
         }
 
-        // Update Transaction
-        await studentRef.update({
+        // 2. Update
+        const { error: updateError } = await supabase.from('students').update({
             stars: student.stars - cost,
             inventory: [...currentInventory, itemCode]
-        });
+        }).eq('id', studentId);
+
+        if (updateError) throw updateError;
 
         return { success: true, message: 'แลกของรางวัลสำเร็จ!' };
     } catch (e) {
@@ -220,50 +177,47 @@ export const redeemReward = async (studentId: string, itemCode: string, cost: nu
 };
 
 // ---------------------------------------------------------------------------
-// 🟢 DASHBOARD DATA
+// 🟢 DATA FETCHING
 // ---------------------------------------------------------------------------
 
 export const getTeacherDashboard = async (school: string) => {
   try {
-    const [studentsSnap, questionsSnap, resultsSnap, assignmentsSnap] = await Promise.all([
-        db.ref('students').orderByChild('school').equalTo(school).once('value'), 
-        db.ref('questions').once('value'), 
-        db.ref('results').once('value'),   
-        db.ref('assignments').orderByChild('school').equalTo(school).once('value')
-    ]);
+    const { data: students } = await supabase.from('students').select('*').eq('school', school);
+    
+    // Questions: Fetch School specific + CENTER + Admin
+    const { data: questions } = await supabase.from('questions')
+        .select('*')
+        .or(`school.eq.${school},school.eq.CENTER,school.eq.Admin`);
 
-    const students = snapshotToArray<Student>(studentsSnap);
-    let questions = snapshotToArray<Question>(questionsSnap);
-    questions = questions.filter(q => q.school === school || q.school === 'CENTER' || q.school === 'Admin');
-    const results = snapshotToArray<ExamResult>(resultsSnap);
-    const assignments = snapshotToArray<Assignment>(assignmentsSnap);
+    const { data: results } = await supabase.from('results').select('*').eq('school', school);
+    const { data: assignments } = await supabase.from('assignments').select('*').eq('school', school);
 
-    return { students, questions, results, assignments };
+    // Map snake_case to camelCase
+    return {
+        students: (students || []).map((s: any) => ({ ...s, teacherId: s.teacher_id })),
+        questions: (questions || []).map((q: any) => ({ ...q, correctChoiceId: q.correct_choice_id, teacherId: q.teacher_id })),
+        results: (results || []).map((r: any) => ({ ...r, studentId: r.student_id, totalQuestions: r.total_questions, assignmentId: r.assignment_id })),
+        assignments: (assignments || []).map((a: any) => ({ ...a, questionCount: a.question_count, createdBy: a.created_by }))
+    };
   } catch (e) {
     console.error(e);
-    return { students: [], results: [], assignments: [], questions: [] };
+    return { students: [], questions: [], results: [], assignments: [] };
   }
 }
 
 export const fetchAppData = async (): Promise<AppData> => {
   try {
-    const [studentsSnap, questionsSnap, resultsSnap, assignmentsSnap] = await Promise.all([
-        db.ref('students').once('value'),
-        db.ref('questions').once('value'),
-        db.ref('results').once('value'),
-        db.ref('assignments').once('value')
-    ]);
+    const { data: students } = await supabase.from('students').select('*');
+    const { data: questions } = await supabase.from('questions').select('*');
+    const { data: results } = await supabase.from('results').select('*');
+    const { data: assignments } = await supabase.from('assignments').select('*');
 
-    let students = snapshotToArray<Student>(studentsSnap);
-    if (students.length === 0) students = MOCK_STUDENTS; 
-
-    let questions = snapshotToArray<Question>(questionsSnap);
-    if (questions.length === 0) questions = MOCK_QUESTIONS; 
-
-    const results = snapshotToArray<ExamResult>(resultsSnap);
-    const assignments = snapshotToArray<Assignment>(assignmentsSnap);
-
-    return { students, questions, results, assignments };
+    return {
+        students: (students || []).map((s: any) => ({ ...s, teacherId: s.teacher_id })) || MOCK_STUDENTS,
+        questions: (questions || []).map((q: any) => ({ ...q, correctChoiceId: q.correct_choice_id, teacherId: q.teacher_id })) || MOCK_QUESTIONS,
+        results: (results || []).map((r: any) => ({ ...r, studentId: r.student_id, totalQuestions: r.total_questions, assignmentId: r.assignment_id })) || [],
+        assignments: (assignments || []).map((a: any) => ({ ...a, questionCount: a.question_count, createdBy: a.created_by })) || []
+    };
   } catch (error) {
     console.error("Fetch error:", error);
     return { students: MOCK_STUDENTS, questions: MOCK_QUESTIONS, results: [], assignments: [] };
@@ -276,9 +230,7 @@ export const fetchAppData = async (): Promise<AppData> => {
 
 export const addQuestion = async (question: any): Promise<boolean> => {
   try {
-    const newRef = db.ref('questions').push();
-    await newRef.set({
-      id: newRef.key,
+    const { error } = await supabase.from('questions').insert([{
       subject: question.subject,
       text: question.text,
       image: question.image || '',
@@ -288,13 +240,13 @@ export const addQuestion = async (question: any): Promise<boolean> => {
           { id: '3', text: question.c3 },
           { id: '4', text: question.c4 },
       ],
-      correctChoiceId: question.correct,
+      correct_choice_id: question.correct,
       explanation: question.explanation,
-      grade: normalizeGrade(question.grade),
-      school: question.school || '',
-      teacherId: question.teacherId || ''
-    });
-    return true;
+      grade: question.grade,
+      school: question.school,
+      teacher_id: question.teacherId
+    }]);
+    return !error;
   } catch (e) {
     return false;
   }
@@ -303,7 +255,7 @@ export const addQuestion = async (question: any): Promise<boolean> => {
 export const editQuestion = async (question: any): Promise<boolean> => {
   try {
     if (!question.id) return false;
-    await db.ref(`questions/${question.id}`).update({
+    const { error } = await supabase.from('questions').update({
       subject: question.subject,
       text: question.text,
       image: question.image || '',
@@ -313,11 +265,11 @@ export const editQuestion = async (question: any): Promise<boolean> => {
           { id: '3', text: question.c3 },
           { id: '4', text: question.c4 },
       ],
-      correctChoiceId: question.correct,
+      correct_choice_id: question.correct,
       explanation: question.explanation,
-      grade: normalizeGrade(question.grade)
-    });
-    return true;
+      grade: question.grade
+    }).eq('id', question.id);
+    return !error;
   } catch (e) {
     return false;
   }
@@ -325,8 +277,8 @@ export const editQuestion = async (question: any): Promise<boolean> => {
 
 export const deleteQuestion = async (id: string): Promise<boolean> => {
   try {
-    await db.ref(`questions/${id}`).remove();
-    return true;
+    const { error } = await supabase.from('questions').delete().eq('id', id);
+    return !error;
   } catch (e) {
     return false;
   }
@@ -338,17 +290,15 @@ export const deleteQuestion = async (id: string): Promise<boolean> => {
 
 export const addAssignment = async (school: string, subject: string, grade: string, questionCount: number, deadline: string, createdBy: string): Promise<boolean> => {
   try {
-    const newRef = db.ref('assignments').push();
-    await newRef.set({
-        id: newRef.key,
+    const { error } = await supabase.from('assignments').insert([{
         school,
         subject,
-        grade: normalizeGrade(grade), 
-        questionCount: Number(questionCount),
+        grade,
+        question_count: Number(questionCount),
         deadline,
-        createdBy
-    });
-    return true;
+        created_by: createdBy
+    }]);
+    return !error;
   } catch (e) {
     return false;
   }
@@ -356,8 +306,8 @@ export const addAssignment = async (school: string, subject: string, grade: stri
 
 export const deleteAssignment = async (id: string): Promise<boolean> => {
   try {
-    await db.ref(`assignments/${id}`).remove();
-    return true;
+    const { error } = await supabase.from('assignments').delete().eq('id', id);
+    return !error;
   } catch (e) {
     return false;
   }
@@ -369,23 +319,24 @@ export const deleteAssignment = async (id: string): Promise<boolean> => {
 
 export const saveScore = async (studentId: string, studentName: string, school: string, score: number, total: number, subject: string, assignmentId?: string) => {
   try {
-    const newResultRef = db.ref('results').push();
-    await newResultRef.set({
-        id: newResultRef.key,
-        studentId,
-        studentName,
+    // 1. Insert Result
+    await supabase.from('results').insert([{
+        student_id: studentId,
+        student_name: studentName,
         school,
-        score,
-        totalQuestions: total,
         subject,
-        assignmentId: assignmentId || '-',
-        timestamp: firebase.database.ServerValue.TIMESTAMP
-    });
+        score,
+        total_questions: total,
+        assignment_id: assignmentId || '-'
+    }]);
 
-    const studentRef = db.ref(`students/${studentId}`);
-    await studentRef.child('stars').transaction((currentStars) => {
-        return (currentStars || 0) + score;
-    });
+    // 2. Update Student Stars (Get current first to be safe, or use RPC if advanced)
+    const { data: student } = await supabase.from('students').select('stars').eq('id', studentId).single();
+    if (student) {
+        await supabase.from('students').update({
+            stars: (student.stars || 0) + score
+        }).eq('id', studentId);
+    }
 
     return true;
   } catch (e) {

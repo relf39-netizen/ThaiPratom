@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Question, SubjectDef, Teacher } from '../types';
-import { ArrowLeft, Play, Layers, Shuffle, GraduationCap, Check, BookOpen } from 'lucide-react';
-import { db } from '../services/firebaseConfig';
+import { ArrowLeft, Play, Layers, Shuffle, Check } from 'lucide-react';
+import { supabase } from '../services/supabaseClient';
 import { fetchAppData } from '../services/api';
 import { getSchoolSubjects } from '../services/subjectService';
 
@@ -28,56 +28,40 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
   
   // Settings
   const [selectedGrade, setSelectedGrade] = useState<string>('P2');
-  const [selectedSubject, setSelectedSubject] = useState<string>('MIXED'); // 'MIXED' or Subject Name
+  const [selectedSubject, setSelectedSubject] = useState<string>('MIXED');
   const [questionCount, setQuestionCount] = useState<number>(10);
   const [timePerQuestion, setTimePerQuestion] = useState<number>(20);
 
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      // 1. Load All Questions
       const data = await fetchAppData();
       setAllQuestions(data.questions);
-
-      // 2. Load Teacher's Subjects
       const subjects = await getSchoolSubjects(teacher.school);
       setSchoolSubjects(subjects);
-
       setLoading(false);
     };
     init();
   }, [teacher.school]);
 
-  const generateRoomCode = () => {
-      return Math.floor(100000 + Math.random() * 900000).toString();
-  };
+  const generateRoomCode = () => Math.floor(100000 + Math.random() * 900000).toString();
 
   const handleCreateGame = async () => {
     setLoading(true);
 
-    // 1. Filter by Grade and School/Center
     let filtered = allQuestions.filter(q => {
         const qGrade = (q.grade || 'ALL').toUpperCase();
         const gradeMatch = qGrade === selectedGrade || qGrade === 'ALL';
-        
         const qSchool = (q.school || 'CENTER');
         const schoolMatch = qSchool === teacher.school || qSchool === 'CENTER' || qSchool === 'Admin';
-
         return gradeMatch && schoolMatch;
     });
 
-    // 2. Filter by Subject
     if (selectedSubject !== 'MIXED') {
         filtered = filtered.filter(q => q.subject === selectedSubject);
-    } else {
-        // If MIXED, ensure we only include subjects that exist in this grade (optional refinement)
-        // For now, we allow any subject within the grade
     }
 
-    // 3. Randomize
     filtered.sort(() => 0.5 - Math.random());
-
-    // 4. Limit Count
     const finalQuestions = filtered.slice(0, questionCount);
 
     if (finalQuestions.length === 0) {
@@ -86,71 +70,45 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
         return;
     }
 
-    // 5. Sanitize Data for Firebase
-    const sanitizedQuestions = finalQuestions.map((q, idx) => {
-        // ... (Same sanitization logic as before for robustness) ...
-        const choices = q.choices.map((c, cIdx) => ({
-            id: String(c.id && c.id.length > 0 ? c.id : `choice_${idx}_${cIdx+1}`).trim(),
-            text: c.text || '',
-            image: c.image || ''
-        }));
-
-        let correctId = String(q.correctChoiceId).trim();
-        // Simple fallback check logic
-        if (!choices.some(c => c.id === correctId)) {
-            if (choices.length > 0) correctId = choices[0].id; 
-        }
-
-        return {
-            id: String(q.id || `q${idx}`),
-            subject: q.subject || 'GENERAL',
-            text: q.text || '',
-            image: q.image || '',
-            choices: choices,
-            correctChoiceId: correctId,
-            explanation: q.explanation || '',
-            grade: q.grade || 'ALL',
-            school: q.school || 'CENTER'
-        };
-    });
+    const sanitizedQuestions = finalQuestions.map((q, idx) => ({
+        id: String(q.id || `q${idx}`),
+        subject: q.subject || 'GENERAL',
+        text: q.text || '',
+        image: q.image || '',
+        choices: q.choices,
+        correctChoiceId: String(q.correctChoiceId).trim(),
+        explanation: q.explanation || '',
+        grade: q.grade || 'ALL',
+        school: q.school || 'CENTER'
+    }));
 
     try {
         const roomCode = generateRoomCode();
-        const roomPath = `games/${roomCode}`;
-        
-        // Find subject icon/color for display
-        let displaySubjectName = "รวมทุกวิชา";
-        if (selectedSubject !== 'MIXED') {
-            displaySubjectName = selectedSubject;
-        }
+        let displaySubjectName = selectedSubject === 'MIXED' ? "รวมทุกวิชา" : selectedSubject;
 
-        await db.ref(`${roomPath}/scores`).set({});
-        await db.ref(`${roomPath}/questions`).set(sanitizedQuestions);
-        await db.ref(`${roomPath}/gameState`).set({
+        // Upsert to Supabase 'game_rooms'
+        const { error } = await supabase.from('game_rooms').upsert([{
+            room_code: roomCode,
             status: 'LOBBY',
-            currentQuestionIndex: 0,
-            totalQuestions: sanitizedQuestions.length,
-            subject: displaySubjectName,
+            current_question_index: 0,
             grade: selectedGrade,
-            timePerQuestion: timePerQuestion,
+            subject: displaySubjectName,
+            time_per_question: timePerQuestion,
             timer: timePerQuestion,
-            schoolId: teacher.school,
-            teacherName: teacher.name
-        });
+            questions: sanitizedQuestions,
+            players: [],
+            scores: {}
+        }]);
 
-        // Register Active Game for School (For auto-join)
-        const schoolKey = teacher.school.replace(/[^a-zA-Z0-9]/g, '_');
-        await db.ref(`activeGames/${schoolKey}`).set(roomCode);
-        
+        if (error) throw error;
         onGameCreated(roomCode);
-    } catch (e) {
-        alert("Firebase Error: " + e);
+    } catch (e: any) {
+        alert("Supabase Error: " + e.message);
     } finally {
         setLoading(false);
     }
   };
 
-  // Filter subjects for the selected grade
   const availableSubjects = schoolSubjects.filter(s => s.grade === selectedGrade);
 
   return (
@@ -166,7 +124,6 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
             </h2>
         </div>
 
-        {/* 1. Grade Selection */}
         <div className="mb-6">
             <label className="block text-sm font-bold text-gray-700 mb-2">1. เลือกระดับชั้น</label>
             <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
@@ -186,12 +143,9 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
             </div>
         </div>
 
-        {/* 2. Subject Selection */}
         <div className="mb-6">
             <label className="block text-sm font-bold text-gray-700 mb-2">2. เลือกวิชา ({availableSubjects.length} วิชา)</label>
-            
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-60 overflow-y-auto p-1">
-                {/* Mixed Option */}
                 <button 
                     onClick={() => setSelectedSubject('MIXED')}
                     className={`p-4 rounded-xl border-2 transition flex flex-col items-center justify-center gap-2 relative overflow-hidden ${
@@ -205,7 +159,6 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
                     {selectedSubject === 'MIXED' && <div className="absolute top-2 right-2 text-purple-600"><Check size={16} /></div>}
                 </button>
 
-                {/* Dynamic Subjects */}
                 {availableSubjects.map((sub) => (
                      <button 
                         key={sub.id}
@@ -221,16 +174,9 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
                         {selectedSubject === sub.name && <div className={`absolute top-2 right-2 text-${sub.color}-600`}><Check size={16} /></div>}
                     </button>
                 ))}
-                
-                {availableSubjects.length === 0 && (
-                     <div className="col-span-full text-center py-4 text-gray-400 bg-gray-50 rounded-xl border border-dashed">
-                         ยังไม่ได้สร้างวิชาสำหรับชั้น {selectedGrade}
-                     </div>
-                )}
             </div>
         </div>
 
-        {/* 3. Count & Time */}
         <div className="grid grid-cols-2 gap-4 mb-8">
             <div>
                 <label className="block text-sm font-bold text-gray-700 mb-2">จำนวนข้อ</label>

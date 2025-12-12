@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Student, Question } from '../types';
 import { Users, Trophy, Play, CheckCircle, Volume2, VolumeX, Crown, Zap, XCircle, Gamepad2, Loader2, User } from 'lucide-react';
 import { speak, playBGM, stopBGM, playSFX, toggleMuteSystem } from '../utils/soundUtils';
-import { db, firebase } from '../services/firebaseConfig';
+import { supabase } from '../services/supabaseClient';
 
 interface GameModeProps {
   student: Student;
@@ -28,54 +28,29 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
   
   const [hasAnswered, setHasAnswered] = useState(false);
   const [selectedChoice, setSelectedChoice] = useState<string | null>(null); 
-  const [connectionError, setConnectionError] = useState(false);
+  const [joinError, setJoinError] = useState('');
   
   const [isMuted, setIsMuted] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(false);
   
   const [timer, setTimer] = useState(0);
   const [maxTime, setMaxTime] = useState(20);
-  const [joinError, setJoinError] = useState('');
   
   const isAdmin = student.id === '99999'; 
   const timerRef = useRef<any>(null);
+  const channelRef = useRef<any>(null);
 
-  const getPlayerName = (name: any) => {
-     return String(name || 'Player').split(' ')[0];
-  };
+  const getPlayerName = (name: any) => String(name || 'Player').split(' ')[0];
 
-  // 1. Initial Room Code from Props
+  // 1. Initial Room Setup
   useEffect(() => {
-      if (initialRoomCode && isAdmin) {
+      if (initialRoomCode) {
           setRoomCode(initialRoomCode);
-          connectToRoom(initialRoomCode);
+          if (isAdmin) connectToRoom(initialRoomCode);
       }
   }, [initialRoomCode, isAdmin]);
 
-  // 2. Listen for School's Active Game
-  useEffect(() => {
-      if (!isAdmin && !initialRoomCode) {
-          const schoolKey = (student.school || 'default').replace(/[^a-zA-Z0-9]/g, '_');
-          const activeGameRef = db.ref(`activeGames/${schoolKey}`);
-
-          activeGameRef.on('value', (snapshot) => {
-              const activeCode = snapshot.val();
-              if (activeCode) {
-                  setRoomCode(activeCode);
-              } else {
-                  setRoomCode('');
-                  if (status === 'WAITING') {
-                      // Stay waiting
-                  }
-              }
-          });
-
-          return () => {
-              activeGameRef.off();
-          };
-      }
-  }, [student.school, isAdmin, initialRoomCode]);
-
+  // Audio Control
   const toggleSound = () => {
     const newState = !isMuted;
     setIsMuted(newState);
@@ -103,124 +78,112 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
   useEffect(() => { return () => stopBGM(); }, []);
 
   const handleJoinRoom = () => {
-      if(roomCode) {
-          connectToRoom(roomCode);
+      const code = prompt("กรุณากรอกรหัสห้อง (Game PIN)");
+      if(code) {
+          setRoomCode(code);
+          connectToRoom(code);
       }
   };
 
-  const connectToRoom = (code: string) => {
-    const roomPath = `games/${code}`;
+  // --- SUPABASE REALTIME LOGIC ---
+
+  const connectToRoom = async (code: string) => {
+    // 1. Fetch Initial State
+    const { data: room, error } = await supabase.from('game_rooms').select('*').eq('room_code', code).single();
     
-    db.ref(`${roomPath}/gameState`).once('value').then((snapshot) => {
-        const gameState = snapshot.val();
-        
-        if (!gameState) {
-            setJoinError('ไม่พบห้องสอบ (อาจจบไปแล้ว)');
-            return;
+    if (error || !room) {
+        setJoinError('ไม่พบห้องสอบ');
+        setRoomCode('');
+        return;
+    }
+
+    // Set Initial State
+    setStatus(room.status as GameStatus);
+    setCurrentQuestionIndex(room.current_question_index);
+    setTimer(room.timer);
+    setMaxTime(room.time_per_question);
+    setQuestions(room.questions || []);
+    setScores(room.scores || {});
+    
+    // 2. Subscribe to Changes
+    const channel = supabase.channel(`game_${code}`, {
+        config: { presence: { key: student.id } }
+    });
+
+    channelRef.current = channel;
+
+    channel
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_rooms', filter: `room_code=eq.${code}` }, (payload) => {
+        const newRoom = payload.new;
+        setStatus(newRoom.status as GameStatus);
+        setCurrentQuestionIndex(newRoom.current_question_index);
+        // Don't sync timer from DB every second to avoid lag, sync only on phase change or explicit sync
+        if (newRoom.status !== 'PLAYING') {
+             setTimer(newRoom.timer);
         }
-
-        setJoinError('');
-        
-        const connectedRef = db.ref(".info/connected");
-        connectedRef.on('value', (snap: any) => setConnectionError(snap.val() === false));
-
-        const gameStateRef = db.ref(`${roomPath}/gameState`);
-        gameStateRef.on('value', (snap: any) => {
-            const data = snap.val();
-            if (data) {
-                setStatus(data.status || 'LOBBY');
-                setCurrentQuestionIndex(data.currentQuestionIndex || 0);
-                setTimer(data.timer || 0);
-                if (data.timePerQuestion) setMaxTime(data.timePerQuestion);
-                
-                if (!isAdmin) registerPlayer(roomPath);
-            } else {
-                setJoinError('ห้องสอบถูกปิดแล้ว');
-                setStatus('WAITING');
-                setRoomCode('');
-            }
-        });
-
-        const playersRef = db.ref(`${roomPath}/players`);
-        playersRef.on('value', (snap: any) => { 
-            const val = snap.val();
-            if(val) {
-                const allPlayers = Object.keys(val).map(key => ({ id: key, ...val[key] }));
-                setPlayers(allPlayers.filter((p:any) => p.name !== undefined && String(p.id) !== '99999'));
-            } else {
-                setPlayers([]);
-            }
-        });
-        
-        const scoresRef = db.ref(`${roomPath}/scores`);
-        scoresRef.on('value', (snap: any) => { setScores(snap.val() || {}); });
-
-        const questionsRef = db.ref(`${roomPath}/questions`);
-        questionsRef.on('value', (snap: any) => {
-            const data = snap.val();
-            if (data) {
-                const qArray = Array.isArray(data) ? data : Object.values(data);
-                setQuestions(qArray.filter((q: any) => q && q.id) as Question[]);
-            }
-        });
-
+        setScores(newRoom.scores || {});
+    })
+    .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        const onlinePlayers = Object.values(state).flat().map((p: any) => p.user);
+        setPlayers(onlinePlayers);
+    })
+    .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+            await channel.track({ user: { id: student.id, name: student.name, avatar: student.avatar } });
+        }
     });
   };
 
-  const registerPlayer = (roomPath: string) => {
-        const playerRef = db.ref(`${roomPath}/players/${student.id}`);
-        playerRef.update({
-            id: student.id, 
-            name: student.name,
-            avatar: student.avatar,
-            online: true,
-            lastSeen: firebase.database.ServerValue.TIMESTAMP
-        });
-        playerRef.onDisconnect().update({ online: false });
-  };
-
   useEffect(() => {
-     setHasAnswered(false);
-     setSelectedChoice(null);
-  }, [currentQuestionIndex]);
+      return () => {
+          if (channelRef.current) supabase.removeChannel(channelRef.current);
+      };
+  }, []);
 
-
+  // --- GAME LOOP (ADMIN ONLY) ---
   useEffect(() => {
     if (!isAdmin || !roomCode || status === 'WAITING') return;
     
-    const roomPath = `games/${roomCode}`;
-
     if (timerRef.current) clearInterval(timerRef.current);
 
     if (status === 'COUNTDOWN') {
         let localCount = 5;
         setCountdown(localCount);
-        db.ref(`${roomPath}/gameState`).update({ timer: maxTime });
+        // Reset DB Timer
+        supabase.from('game_rooms').update({ timer: maxTime }).eq('room_code', roomCode).then();
 
         timerRef.current = setInterval(() => {
             localCount--;
             setCountdown(localCount);
             if (localCount <= 0) {
                 clearInterval(timerRef.current);
-                db.ref(`${roomPath}/gameState`).update({ status: 'PLAYING', timer: maxTime });
+                supabase.from('game_rooms').update({ status: 'PLAYING', timer: maxTime }).eq('room_code', roomCode).then();
             }
         }, 1000);
     } else if (status === 'PLAYING') {
         let currentTimer = maxTime; 
+        setTimer(currentTimer); // Local immediate update
+
         timerRef.current = setInterval(() => {
             currentTimer--;
-            if (currentTimer >= 0) {
-                 db.ref(`${roomPath}/gameState/timer`).set(currentTimer);
+            setTimer(currentTimer); // Update local for admin UI
+            
+            // Sync to DB only at key moments (e.g. every 5s or end) to save bandwidth
+            if (currentTimer % 5 === 0) {
+                 // Optional: Sync timer to DB for late joiners
             }
+
             if (currentTimer < 0) {
                 clearInterval(timerRef.current);
                 if (currentQuestionIndex < questions.length - 1) {
-                    db.ref(`${roomPath}/gameState`).update({
-                        currentQuestionIndex: currentQuestionIndex + 1,
-                        timer: maxTime
-                    });
+                    supabase.from('game_rooms').update({
+                        current_question_index: currentQuestionIndex + 1,
+                        timer: maxTime,
+                        status: 'PLAYING' // Refresh status to trigger clients
+                    }).eq('room_code', roomCode).then();
                 } else {
-                    db.ref(`${roomPath}/gameState`).update({ status: 'FINISHED', timer: 0 });
+                    supabase.from('game_rooms').update({ status: 'FINISHED', timer: 0 }).eq('room_code', roomCode).then();
                 }
             }
         }, 1000);
@@ -231,40 +194,61 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
     };
   }, [status, isAdmin, maxTime, currentQuestionIndex, questions.length, roomCode]);
 
-  const handleStartGame = () => {
+  // Client Side Timer (Approximate)
+  useEffect(() => {
+      if (!isAdmin && status === 'PLAYING') {
+          setTimer(maxTime);
+          const interval = setInterval(() => {
+              setTimer(t => t > 0 ? t - 1 : 0);
+          }, 1000);
+          return () => clearInterval(interval);
+      }
+  }, [status, currentQuestionIndex, maxTime, isAdmin]);
+
+  // Reset state on question change
+  useEffect(() => {
+     setHasAnswered(false);
+     setSelectedChoice(null);
+  }, [currentQuestionIndex]);
+
+  const handleStartGame = async () => {
     if (!roomCode) return;
-    if (questions.length === 0) return alert("ไม่พบข้อสอบ");
-    db.ref(`games/${roomCode}/scores`).set({});
-    db.ref(`games/${roomCode}/gameState`).update({ status: 'COUNTDOWN' });
+    await supabase.from('game_rooms').update({ 
+        status: 'COUNTDOWN',
+        scores: {} 
+    }).eq('room_code', roomCode);
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     if (!roomCode) return;
-    db.ref(`games/${roomCode}/gameState`).update({ status: 'LOBBY', currentQuestionIndex: 0, timer: 0 });
-    db.ref(`games/${roomCode}/scores`).set({});
-    setCorrectCount(0); 
-    setHasAnswered(false);
-    setSelectedChoice(null);
+    await supabase.from('game_rooms').update({ 
+        status: 'LOBBY', 
+        current_question_index: 0, 
+        timer: 0,
+        scores: {}
+    }).eq('room_code', roomCode);
+    
+    setCorrectCount(0);
   };
 
   const normalizeId = (id: string | number) => String(id).trim().toLowerCase().replace('.', '');
 
-  const handleAnswer = (choiceId: string) => {
+  const handleAnswer = async (choiceId: string) => {
     if (hasAnswered || timer <= 0 || !roomCode) return;
     setHasAnswered(true);
     setSelectedChoice(choiceId); 
 
     const currentQ = questions[currentQuestionIndex];
-    
     const normChoice = normalizeId(choiceId);
     const normCorrect = normalizeId(currentQ.correctChoiceId);
     
+    // Simple check
     let isCorrect = normChoice === normCorrect;
-
+    
+    // Fallback index check
     if (!isCorrect) {
         const choiceIndex = currentQ.choices.findIndex(c => normalizeId(c.id) === normChoice);
         const correctIndex = parseInt(normCorrect);
-        
         if (choiceIndex !== -1 && !isNaN(correctIndex) && (choiceIndex + 1) === correctIndex) {
             isCorrect = true;
         }
@@ -277,9 +261,14 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
        playSFX('CORRECT'); 
        speak("เยี่ยมมาก");
 
-       db.ref(`games/${roomCode}/scores/${student.id}`).transaction((currentScore) => {
-         return (currentScore || 0) + points;
-       });
+       // Optimistic update locally
+       const newScore = (scores[student.id] || 0) + points;
+       const newScores = { ...scores, [student.id]: newScore };
+       setScores(newScores);
+
+       // Send to DB
+       await supabase.from('game_rooms').update({ scores: newScores }).eq('room_code', roomCode);
+
     } else {
        playSFX('WRONG'); 
        speak("ยังไม่ถูก");
@@ -295,61 +284,35 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
   };
 
   const sortedPlayers = players
-    .filter(p => p.online && String(p.id) !== '99999')
+    .filter(p => String(p.id) !== '99999')
     .sort((a, b) => (scores[b.id] || 0) - (scores[a.id] || 0));
     
   const currentQuestion = questions[currentQuestionIndex];
 
-  // ---------- RENDER START ----------
+  // ---------- RENDERING (UI) ----------
 
   if (status === 'WAITING' && !isAdmin) {
       return (
           <div className="flex flex-col items-center justify-center min-h-[80vh] px-4 animate-fade-in">
               <div className="bg-white p-8 rounded-[40px] shadow-xl border-4 border-blue-100 w-full max-w-md text-center relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-400 to-purple-400"></div>
+                  <div className="bg-blue-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 text-blue-500">
+                      <Gamepad2 size={40} />
+                  </div>
+                  <h2 className="text-2xl font-black text-gray-800 mb-2 font-fun">ใส่รหัสห้องสอบ</h2>
+                  <p className="text-gray-500 mb-6">ขอรหัส 6 หลักจากคุณครู</p>
                   
-                  {roomCode ? (
-                      <>
-                        <div className="bg-green-100 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 text-green-600 animate-bounce">
-                            <Gamepad2 size={48} />
-                        </div>
-                        <h2 className="text-2xl font-black text-gray-800 mb-2 font-fun">พบห้องแข่งขันแล้ว!</h2>
-                        <p className="text-gray-500 mb-8 font-medium">กดปุ่มด้านล่างเพื่อเข้าห้องได้เลย</p>
-                        
-                        <button 
-                            onClick={handleJoinRoom}
-                            className="w-full bg-gradient-to-r from-green-500 to-emerald-500 text-white text-xl font-bold py-4 rounded-2xl shadow-lg hover:scale-105 transition-transform animate-pulse"
-                        >
-                            เข้าร่วมแข่งขัน
-                        </button>
-                      </>
-                  ) : (
-                      <>
-                        <div className="bg-blue-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 text-blue-500">
-                            <Loader2 size={40} className="animate-spin" />
-                        </div>
-                        <h2 className="text-2xl font-black text-gray-800 mb-2 font-fun">กำลังรอคุณครู...</h2>
-                        <p className="text-gray-500 mb-8 font-medium">เมื่อครูเปิดห้องสอบ ปุ่มเข้าเกมจะปรากฏขึ้น</p>
-                        
-                        <div className="bg-gray-100 rounded-xl p-4 flex items-center gap-3 mb-6">
-                            <div className="bg-white p-2 rounded-full border border-gray-200">
-                                <User size={20} className="text-gray-400"/>
-                            </div>
-                            <div className="text-left">
-                                <div className="text-xs text-gray-400 font-bold uppercase">ผู้เล่น</div>
-                                <div className="text-sm font-bold text-gray-700">{student.name}</div>
-                            </div>
-                        </div>
-                      </>
-                  )}
-                  
-                  <button onClick={onExit} className="mt-4 text-gray-400 text-sm hover:text-red-500 font-bold px-4 py-2 rounded-lg">ยกเลิก</button>
+                  <button 
+                      onClick={handleJoinRoom}
+                      className="w-full bg-blue-600 text-white text-xl font-bold py-4 rounded-2xl shadow-lg hover:scale-105 transition-transform"
+                  >
+                      กรอกรหัสเข้าร่วม
+                  </button>
+                  <button onClick={onExit} className="mt-4 text-gray-400 text-sm hover:text-red-500 font-bold px-4 py-2 rounded-lg">กลับหน้าหลัก</button>
+                  {joinError && <p className="text-red-500 mt-4 font-bold">{joinError}</p>}
               </div>
           </div>
       );
   }
-
-  if (connectionError) return <div className="p-10 text-center">Connection Error...</div>;
 
   if (!audioEnabled) {
     return (
@@ -358,9 +321,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
                 <Volume2 size={64} />
             </div>
             <h2 className="text-3xl font-bold mb-4">พร้อมแข่งขันหรือยัง?</h2>
-            <p className="mb-8 text-blue-100 max-w-md">
-                เกมนี้มีเสียงประกอบสนุกๆ<br/>กดปุ่มด้านล่างเพื่อเข้าห้องได้เลย!
-            </p>
+            <p className="mb-8 text-blue-100 max-w-md">กดปุ่มด้านล่างเพื่อเข้าห้องได้เลย!</p>
             <button onClick={enableAudio} className="bg-yellow-400 text-yellow-900 px-10 py-4 rounded-full text-xl font-black shadow-[0_0_20px_rgba(250,204,21,0.6)] hover:scale-105 transition-transform flex items-center gap-3 animate-pulse cursor-pointer">
                 <Zap fill="currentColor" /> เข้าสู่สนามแข่ง
             </button>
@@ -369,6 +330,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
     );
   }
 
+  // Reuse same UI structure as before, just updated logic
   if (status === 'LOBBY') {
     return (
       <div className="text-center py-10 min-h-[70vh] flex flex-col justify-center relative bg-gradient-to-b from-blue-50 to-white rounded-3xl border-4 border-blue-100 animate-fade-in">
@@ -382,7 +344,6 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
         )}
 
         <h2 className="text-3xl font-black text-blue-900 mb-2 animate-bounce font-fun">🎮 ห้องพักนักกีฬา</h2>
-        <div className="text-sm text-gray-400 font-bold mb-6 bg-blue-50 inline-block mx-auto px-4 py-1 rounded-full">{student.school}</div>
         
         <div className="bg-white p-6 rounded-[32px] shadow-lg border-2 border-blue-50 max-w-3xl mx-auto w-full mb-8">
           <div className="text-xl font-bold text-blue-600 mb-6 flex justify-center gap-2 items-center"><Users className="bg-blue-100 p-1 rounded-md box-content"/> เพื่อนๆ ในห้อง ({sortedPlayers.length})</div>
@@ -478,21 +439,13 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {currentQuestion?.choices.map((c, i) => {
                              let btnClass = ['bg-red-50 border-red-200 text-red-800 hover:bg-red-100','bg-blue-50 border-blue-200 text-blue-800 hover:bg-blue-100','bg-yellow-50 border-yellow-200 text-yellow-800 hover:bg-yellow-100','bg-green-50 border-green-200 text-green-800 hover:bg-green-100'][i%4];
-                             
                              const isSelected = selectedChoice === c.id;
 
                              if (hasAnswered || timer <= 0) {
                                  btnClass += ' opacity-60 grayscale cursor-not-allowed';
-                                 
                                  const normId = normalizeId(c.id);
                                  const normCorrect = normalizeId(currentQuestion.correctChoiceId);
                                  let isThisCorrect = normId === normCorrect;
-                                 if(!isThisCorrect) {
-                                     const cIdx = currentQuestion.choices.findIndex(ch => normalizeId(ch.id) === normId);
-                                     const corrIdx = parseInt(normCorrect);
-                                     if(cIdx !== -1 && !isNaN(corrIdx) && cIdx+1 === corrIdx) isThisCorrect = true;
-                                 }
-
                                  if (isThisCorrect) {
                                      btnClass = 'bg-green-100 border-green-500 text-green-900 !opacity-100 !grayscale-0 ring-4 ring-green-200 shadow-lg';
                                  } else if (isSelected) {
@@ -502,10 +455,6 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
  
                              return (
                                 <button key={c.id} onClick={()=>handleAnswer(c.id)} disabled={hasAnswered || timer<=0} className={`p-4 md:p-5 rounded-3xl font-bold text-lg border-b-8 relative overflow-hidden transition active:scale-95 active:border-b-0 active:translate-y-2 ${btnClass}`}>
-                                    {(hasAnswered || timer<=0) && normalizeId(c.id) === normalizeId(currentQuestion.correctChoiceId) && <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center z-10"><CheckCircle className="text-green-600 w-10 h-10 drop-shadow-md bg-white rounded-full"/></div>}
-                                    {(hasAnswered || timer<=0) && isSelected && normalizeId(c.id) !== normalizeId(currentQuestion.correctChoiceId) && (
-                                        <div className="absolute inset-0 bg-red-500/20 flex items-center justify-center z-10"><XCircle className="text-red-600 w-10 h-10 drop-shadow-md bg-white rounded-full"/></div>
-                                    )}
                                     {c.text}
                                 </button>
                              );
@@ -547,39 +496,8 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
     return (
         <div className="max-w-4xl mx-auto py-10 animate-fade-in">
             <div className="text-center mb-10">
-                <div className="relative inline-block">
-                    <div className="absolute inset-0 bg-yellow-400 blur-3xl opacity-30 animate-pulse"></div>
-                    <Trophy size={120} className="text-yellow-400 animate-bounce relative z-10 drop-shadow-2xl"/>
-                </div>
+                <Trophy size={120} className="text-yellow-400 animate-bounce relative z-10 drop-shadow-2xl mx-auto"/>
                 <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-orange-600 mt-4 mb-2 font-fun">จบการแข่งขัน!</h1>
-            </div>
-
-            <div className="flex justify-center items-end gap-4 mb-12 h-64 px-4">
-                {sortedPlayers[1] && (
-                    <div className="flex flex-col items-center w-1/3 animate-slide-up" style={{animationDelay: '0.2s'}}>
-                        <div className="text-5xl mb-2">{sortedPlayers[1].avatar}</div>
-                        <div className="text-sm font-bold text-gray-600 mb-1">{getPlayerName(sortedPlayers[1].name)}</div>
-                        <div className="w-full bg-gray-200 h-32 rounded-t-2xl border-b-8 border-gray-300 flex items-center justify-center text-4xl font-black text-gray-500 shadow-lg">2</div>
-                    </div>
-                )}
-                {sortedPlayers[0] && (
-                    <div className="flex flex-col items-center w-1/3 z-10 animate-slide-up">
-                        <Crown className="text-yellow-500 mb-2 animate-pulse" size={40} />
-                        <div className="text-7xl mb-2 transform hover:scale-110 transition">{sortedPlayers[0].avatar}</div>
-                        <div className="text-lg font-bold text-yellow-600 mb-1">{getPlayerName(sortedPlayers[0].name)}</div>
-                        <div className="w-full bg-yellow-400 h-48 rounded-t-2xl border-b-8 border-yellow-500 flex items-center justify-center text-6xl font-black text-yellow-800 shadow-xl relative overflow-hidden">
-                            1
-                            <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
-                        </div>
-                    </div>
-                )}
-                {sortedPlayers[2] && (
-                    <div className="flex flex-col items-center w-1/3 animate-slide-up" style={{animationDelay: '0.4s'}}>
-                        <div className="text-5xl mb-2">{sortedPlayers[2].avatar}</div>
-                        <div className="text-sm font-bold text-orange-700 mb-1">{getPlayerName(sortedPlayers[2].name)}</div>
-                        <div className="w-full bg-orange-300 h-24 rounded-t-2xl border-b-8 border-orange-400 flex items-center justify-center text-4xl font-black text-orange-800 shadow-lg">3</div>
-                    </div>
-                )}
             </div>
 
             <div className="bg-white rounded-[32px] shadow-xl border border-gray-100 overflow-hidden">

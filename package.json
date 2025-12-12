@@ -1,3 +1,4 @@
+
 {
   "name": "smart-onet-prep",
   "private": true,
@@ -11,7 +12,7 @@
   },
   "dependencies": {
     "@google/genai": "*",
-    "firebase": "^10.8.1",
+    "@supabase/supabase-js": "^2.39.7",
     "lucide-react": "^0.344.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
