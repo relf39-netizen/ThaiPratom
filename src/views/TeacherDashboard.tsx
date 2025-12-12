@@ -274,13 +274,13 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                  // Update local state
                  setStudents(prev => prev.map(s => s.id === editingStudentId ? { ...s, name: newStudentName, avatar: newStudentAvatar, grade: newStudentGrade, teacherId: currentTeacherId } : s));
                  setEditingStudentId(null);
+                 alert('✅ บันทึกข้อมูลสำเร็จ');
              } else if (res.student) {
                  // Add new to local state
                  setStudents(prev => [...prev, res.student!]);
                  setCreatedStudent(res.student);
              }
              setNewStudentName('');
-             alert('✅ บันทึกข้อมูลสำเร็จ');
           } else {
              alert('บันทึกไม่สำเร็จ: ' + res.message);
           }
@@ -521,13 +521,10 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         </div>
       )}
 
-      {/* Render Tabs content here... (Same as before but activeTab selection renders specific components) */}
+      {/* Render Tabs content here... */}
       {activeTab !== 'menu' && (
         <div className="bg-white rounded-3xl shadow-sm p-4 md:p-6 min-h-[400px] relative animate-fade-in">
              <button onClick={() => { setActiveTab('menu'); setQBankSelectedGrade(null); setViewingSubjectGrade(null); }} className="mb-6 flex items-center gap-2 text-gray-500 hover:text-purple-600 font-bold transition-colors"><div className="bg-gray-100 p-2 rounded-full"><ArrowLeft size={20} /></div> กลับเมนูหลัก</button>
-             
-             {/* Reuse existing JSX from previous TeacherDashboard.tsx for each tab, now calling new API functions */}
-             {/* Only key logic changes were needed in the imports and API calls above. The render logic remains largely compatible. */}
              
              {/* TEACHER MANAGEMENT TAB - ADMIN ONLY */}
             {activeTab === 'teachers' && isAdmin && (
@@ -747,14 +744,9 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 </div>
             )}
             
-            {/* ... ASSIGNMENTS, QUESTIONS, STATS TABS (Reuse existing rendering logic but they now use data from Firebase) ... */}
-            {/* Due to length limits, assuming the rest of the file logic is identical to previous version, 
-                just ensuring all CRUD operations call the imported API functions. */}
-                
             {/* ASSIGNMENTS TAB */}
             {activeTab === 'assignments' && (
                 <div className="max-w-4xl mx-auto">
-                    {/* ... (Same layout as before) ... */}
                     <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl p-6 shadow-md text-white mb-8">
                         <h2 className="text-2xl font-bold flex items-center gap-2 mb-2"><Sparkles className="text-yellow-300" /> สร้างการบ้านด้วย AI</h2>
                         <button onClick={() => { setAiCreateAssignment(true); setShowAiModal(true); setAiInstructions(''); setDraftQuestions([]); }} className="mt-4 bg-white text-indigo-600 px-6 py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-50 flex items-center gap-2">
@@ -849,7 +841,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                      <textarea value={qText} onChange={(e)=>setQText(e.target.value)} className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-blue-200" rows={3} placeholder="พิมพ์โจทย์คำถามที่นี่..."></textarea>
                                   </div>
 
-                                  {/* ... Other inputs same as before ... */}
                                   <div className="mb-4">
                                       <label className="block text-xs font-bold text-gray-500 mb-1">ลิงก์รูปภาพ (ถ้ามี)</label>
                                       <div className="flex gap-2 items-center">
@@ -995,19 +986,14 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         </div>
       )}
 
-      {/* MODALS RENDERED HERE (AI Modal, Grade Modal, Delete Modal, Assignment Modal) - Same as previous version, just ensuring visibility logic works with new state if needed. */}
-      {/* (Including them here implicitly as they rely on local state which is managed above) */}
-      
       {showAiModal && (
           <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center p-4 backdrop-blur-sm">
-             {/* ... AI Modal Content ... */}
              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl animate-fade-in flex flex-col max-h-[90vh]">
                   <div className="bg-indigo-600 p-4 text-white flex justify-between items-center rounded-t-2xl">
                       <h3 className="font-bold flex items-center gap-2"><Sparkles size={20} className="text-yellow-300"/> สร้างด้วย AI</h3>
                       <button onClick={()=>setShowAiModal(false)}><X size={20}/></button>
                   </div>
                   <div className="p-6 overflow-y-auto">
-                      {/* ... AI Form Inputs ... */}
                       <div className="mb-4">
                           <input type="password" value={geminiApiKey} onChange={(e)=>setGeminiApiKey(e.target.value)} className="w-full p-2 border rounded-lg text-sm mb-2 focus:ring-2 focus:ring-indigo-300 outline-none" placeholder="วาง API Key ที่นี่ (เริ่มต้นด้วย AIza...)"/>
                           
@@ -1059,14 +1045,19 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                  </div>
                  <div className="max-h-60 overflow-y-auto space-y-2">
                      {studentsInGrade.map(s => (
-                         <div key={s.id} className="flex justify-between items-center border p-2 rounded-lg">
-                             <div className="flex items-center gap-2">
-                                 <span className="text-xl">{s.avatar}</span>
-                                 <span>{s.name}</span>
+                         <div key={s.id} className="flex justify-between items-center border p-3 rounded-xl hover:bg-gray-50 transition-colors">
+                             <div className="flex items-center gap-3">
+                                 <div className="text-2xl w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center border border-gray-200 shadow-sm">{s.avatar}</div>
+                                 <div>
+                                     <div className="font-bold text-gray-800">{s.name}</div>
+                                     <div className="text-xs font-mono font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded border border-purple-100 inline-block mt-0.5">
+                                        รหัส: {s.id}
+                                     </div>
+                                 </div>
                              </div>
                              <div className="flex gap-2">
-                                 <button onClick={()=>handleEditStudent(s)} className="text-blue-500"><Edit size={16}/></button>
-                                 <button onClick={()=>openDeleteModal(s.id, 'STUDENT')} className="text-red-500"><Trash2 size={16}/></button>
+                                 <button onClick={()=>handleEditStudent(s)} className="text-blue-500 hover:bg-blue-50 p-2 rounded-lg transition-colors"><Edit size={16}/></button>
+                                 <button onClick={()=>openDeleteModal(s.id, 'STUDENT')} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"><Trash2 size={16}/></button>
                              </div>
                          </div>
                      ))}
@@ -1086,6 +1077,39 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                   </div>
               </div>
           </div>
+      )}
+
+      {createdStudent && (
+        <div className="fixed inset-0 bg-black/60 z-[130] flex items-center justify-center p-4 animate-fade-in backdrop-blur-sm">
+           <div className="bg-white rounded-[32px] p-8 max-w-sm w-full relative overflow-hidden text-center shadow-2xl border-4 border-white transform scale-100 transition-transform">
+               <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-purple-500 to-indigo-600 rounded-b-[50%] -mt-16"></div>
+               
+               <div className="relative z-10 pt-4">
+                   <div className="bg-white/20 inline-block px-4 py-1 rounded-full text-white text-sm font-bold mb-4 shadow-sm backdrop-blur-md">ลงทะเบียนสำเร็จ</div>
+                   
+                   <div className="w-28 h-28 bg-white rounded-full mx-auto mb-4 flex items-center justify-center text-7xl shadow-xl border-4 border-purple-50">
+                       {createdStudent.avatar}
+                   </div>
+                   
+                   <h2 className="text-2xl font-bold text-gray-800 mb-1">{createdStudent.name}</h2>
+                   <p className="text-gray-500 text-sm mb-6">{createdStudent.school}</p>
+                   
+                   <div className="bg-purple-50 border-2 border-purple-100 rounded-2xl p-4 mb-6 relative overflow-hidden">
+                       <div className="absolute top-0 right-0 -mt-2 -mr-2 w-10 h-10 bg-purple-200 rounded-full opacity-50"></div>
+                       <p className="text-xs text-purple-600 font-bold uppercase tracking-wider mb-1">รหัสเข้าใช้งาน (ID)</p>
+                       <div className="text-5xl font-black text-purple-600 font-mono tracking-widest drop-shadow-sm">{createdStudent.id}</div>
+                       <p className="text-[10px] text-gray-400 mt-2">*จดรหัสนี้ไว้เพื่อเข้าสู่ระบบ</p>
+                   </div>
+                   
+                   <button 
+                    onClick={() => setCreatedStudent(null)} 
+                    className="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-bold hover:shadow-lg hover:scale-105 transition-all"
+                   >
+                       รับทราบ
+                   </button>
+               </div>
+           </div>
+        </div>
       )}
 
       {selectedAssignment && (
