@@ -1,10 +1,11 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Teacher, Student, Subject, Assignment, Question, SubjectDef } from '../types';
-import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, Sparkles, Wand2, Library, ArrowLeft, GraduationCap, Trash2, Edit, UserCog, PenTool, Clock } from 'lucide-react';
+import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, Sparkles, Wand2, Library, ArrowLeft, GraduationCap, Trash2, Edit, UserCog, PenTool, Clock, TrendingUp, Trophy, Activity, Users, PieChart, Search, Filter } from 'lucide-react';
 import { getTeacherDashboard, manageStudent, addAssignment, addQuestion, editQuestion, deleteQuestion, deleteAssignment, getTeachers, manageTeacher } from '../services/api';
 import { generateQuestionWithAI, GeneratedQuestion } from '../services/aiService';
 import { getSchoolSubjects, addSubject, deleteSubject } from '../services/subjectService';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface TeacherDashboardProps {
   teacher: Teacher;
@@ -39,6 +40,8 @@ const ICONS = ['📖', '📐', '🧬', '🎨', '🎵', '⚽', '🌍', '💻', '�
 
 const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, onStartGame }) => {
   const [activeTab, setActiveTab] = useState<'menu' | 'students' | 'subjects' | 'stats' | 'questions' | 'assignments' | 'teachers'>('menu');
+  const [statsTab, setStatsTab] = useState<'students' | 'subjects'>('students');
+  const [statsGrade, setStatsGrade] = useState<string>('ALL'); // State for filtering stats by grade
   
   const [students, setStudents] = useState<Student[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -113,6 +116,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [assignDeadline, setAssignDeadline] = useState('');
 
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
+  const [viewingStudentDetail, setViewingStudentDetail] = useState<Student | null>(null); // New state for student details
 
   const [deleteModal, setDeleteModal] = useState<{
       isOpen: boolean;
@@ -130,6 +134,57 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
 
   const normalizeId = (id: any) => id ? String(id).trim() : '';
   const isAdmin = teacher.username?.toLowerCase() === 'admin' || teacher.role === 'ADMIN' || teacher.role === 'admin';
+
+  // --- Statistics Logic (Updated to handle filtering) ---
+  const filteredStatistics = useMemo(() => {
+      // 1. Filter Students based on selected Grade
+      const targetStudents = students.filter(s => statsGrade === 'ALL' || (s.grade || 'P2') === statsGrade);
+      const targetStudentIds = new Set(targetStudents.map(s => s.id));
+
+      // 2. Filter Results based on those students
+      const targetResults = stats.filter(r => targetStudentIds.has(r.studentId));
+
+      // Group stats by subject
+      const subjectStats: Record<string, { attempts: number, totalScore: number, totalQuestions: number, name: string }> = {};
+      
+      targetResults.forEach(result => {
+          if (!subjectStats[result.subject]) {
+              subjectStats[result.subject] = { name: result.subject, attempts: 0, totalScore: 0, totalQuestions: 0 };
+          }
+          subjectStats[result.subject].attempts += 1;
+          subjectStats[result.subject].totalScore += result.score;
+          subjectStats[result.subject].totalQuestions += result.totalQuestions;
+      });
+
+      const subjectsData = Object.values(subjectStats).map(s => ({
+          ...s,
+          avgScore: s.totalQuestions > 0 ? Math.round((s.totalScore / s.totalQuestions) * 100) : 0
+      }));
+
+      // Find Highlights
+      let mostPopular = null;
+      let bestPerformance = null;
+
+      if (subjectsData.length > 0) {
+          mostPopular = subjectsData.reduce((prev, current) => (prev.attempts > current.attempts) ? prev : current);
+          // Only consider subjects with at least 3 attempts for "Best Performance" to avoid 100% on 1 try skewing
+          const qualifiedForBest = subjectsData.filter(s => s.attempts >= 3);
+          if (qualifiedForBest.length > 0) {
+              bestPerformance = qualifiedForBest.reduce((prev, current) => (prev.avgScore > current.avgScore) ? prev : current);
+          } else {
+              bestPerformance = subjectsData.reduce((prev, current) => (prev.avgScore > current.avgScore) ? prev : current);
+          }
+      }
+
+      return {
+          subjectsData,
+          mostPopular,
+          bestPerformance,
+          activeStudents: new Set(targetResults.map(s => s.studentId)).size,
+          totalStudents: targetStudents.length,
+          filteredStudents: targetStudents
+      };
+  }, [stats, students, statsGrade]);
 
   useEffect(() => {
     loadData();
@@ -477,6 +532,32 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
     return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
+  const getStudentActivity = (studentId: string) => {
+      const studentResults = stats.filter(r => String(r.studentId) === String(studentId));
+      const totalExams = studentResults.length;
+      const lastExam = studentResults.length > 0 
+          ? Math.max(...studentResults.map(r => r.timestamp)) 
+          : null;
+      return { totalExams, lastExam };
+  };
+
+  const getStudentSubjectStats = (studentId: string) => {
+      const studentResults = stats.filter(r => String(r.studentId) === String(studentId));
+      const subjMap: Record<string, { totalScore: number, count: number }> = {};
+      
+      studentResults.forEach(r => {
+          if (!subjMap[r.subject]) subjMap[r.subject] = { totalScore: 0, count: 0 };
+          subjMap[r.subject].totalScore += (r.score / r.totalQuestions) * 100;
+          subjMap[r.subject].count++;
+      });
+
+      return Object.entries(subjMap).map(([subject, data]) => ({
+          subject,
+          avg: Math.round(data.totalScore / data.count),
+          count: data.count
+      }));
+  };
+
   return (
     <div className="max-w-6xl mx-auto pb-20 relative">
       
@@ -507,7 +588,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 <MenuCard icon={<UserCog size={40} />} title="จัดการข้อมูลครู" desc="เพิ่ม/แก้ไข บัญชีครู" color="bg-teal-50 text-teal-600 border-teal-200" onClick={() => { setActiveTab('teachers'); loadTeachers(); }} />
             )}
             <MenuCard icon={<Calendar size={40} />} title="สั่งการบ้าน" desc="มอบหมายงานให้นักเรียน" color="bg-orange-50 text-orange-600 border-orange-200" onClick={() => { setActiveTab('assignments'); loadSubjects(); }} />
-            <MenuCard icon={<BarChart2 size={40} />} title="ดูผลคะแนน" desc="สถิติการสอบ" color="bg-green-50 text-green-600 border-green-200" onClick={() => setActiveTab('stats')} />
+            <MenuCard icon={<BarChart2 size={40} />} title="สถิติคะแนนของนักเรียน" desc="สถิติการเข้าใช้งาน" color="bg-green-50 text-green-600 border-green-200" onClick={() => setActiveTab('stats')} />
             <MenuCard icon={<FileText size={40} />} title="คลังข้อสอบ" desc="เพิ่มและจัดการข้อสอบ" color="bg-blue-50 text-blue-600 border-blue-200" onClick={() => { setActiveTab('questions'); loadSubjects(); }} />
             <MenuCard icon={<Gamepad2 size={40} />} title="จัดกิจกรรมเกม" desc="เปิดห้องแข่งขัน Real-time" color="bg-pink-50 text-pink-600 border-pink-200" onClick={onStartGame} />
         </div>
@@ -983,28 +1064,186 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             {/* STATS TAB */}
             {activeTab === 'stats' && (
               <div>
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-bold text-gray-800">ผลการเรียนของนักเรียน ({students.length} คน)</h3>
+                <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
+                  <h3 className="text-lg font-bold text-gray-800">📊 สถิติคะแนนของนักเรียน</h3>
                   <button onClick={loadData} className="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-lg text-gray-600 flex items-center gap-1"><RefreshCw size={14}/> รีเฟรช</button>
                 </div>
+
+                {/* Grade Filter Bar */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-6">
+                    <button 
+                        onClick={() => setStatsGrade('ALL')}
+                        className={`px-4 py-2 rounded-xl text-sm font-bold border transition whitespace-nowrap flex items-center gap-2 ${statsGrade === 'ALL' ? 'bg-gray-800 text-white border-gray-800 shadow-md' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                    >
+                        <Filter size={16} /> ทุกระดับชั้น
+                    </button>
+                    {GRADE_OPTIONS.map(g => (
+                        <button 
+                            key={g.value}
+                            onClick={() => setStatsGrade(g.value)}
+                            className={`px-4 py-2 rounded-xl text-sm font-bold border transition whitespace-nowrap ${statsGrade === g.value ? `bg-white border-${g.color.split(' ')[0].replace('bg-','').replace('-50','')}-500 text-${g.color.split(' ')[1].replace('text-','').replace('-700','')}-700 shadow-md ring-2 ring-${g.color.split(' ')[0].replace('bg-','').replace('-50','')}-200` : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}
+                        >
+                            {g.label}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Big Toggle Buttons */}
+                <div className="grid grid-cols-2 gap-4 mb-8">
+                    <button 
+                        onClick={() => setStatsTab('students')}
+                        className={`p-4 rounded-2xl border-2 transition-all flex flex-col items-center justify-center gap-2 ${statsTab === 'students' ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md' : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'}`}
+                    >
+                        <Users size={32} />
+                        <span className="font-bold text-lg">สถิตินักเรียน</span>
+                    </button>
+                    <button 
+                        onClick={() => setStatsTab('subjects')}
+                        className={`p-4 rounded-2xl border-2 transition-all flex flex-col items-center justify-center gap-2 ${statsTab === 'subjects' ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md' : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'}`}
+                    >
+                        <PieChart size={32} />
+                        <span className="font-bold text-lg">สถิติรายวิชา</span>
+                    </button>
+                </div>
+
                 {loading ? <div className="text-center py-10 text-gray-400">กำลังโหลด...</div> : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm border-collapse">
-                      <thead className="bg-purple-50 text-purple-900 border-b border-purple-100">
-                        <tr><th className="p-4 rounded-tl-xl w-20 text-center">รูป</th><th className="p-4">ข้อมูลนักเรียน</th><th className="p-4 text-center">ระดับชั้น</th><th className="p-4 rounded-tr-xl text-right">ดาวสะสม</th></tr>
-                      </thead>
-                      <tbody>
-                        {students.map(s => (
-                            <tr key={s.id} className="border-b hover:bg-gray-50 transition-colors">
-                              <td className="p-3 text-center"><div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center text-3xl mx-auto">{s.avatar || '👤'}</div></td>
-                              <td className="p-3 align-middle"><div className="font-bold text-gray-900 text-base mb-1">{s.name}</div><span className="text-xs text-gray-500 bg-white border border-gray-200 px-2 py-0.5 rounded">ID: {s.id}</span></td>
-                              <td className="p-3 text-center align-middle"><span className="px-2 py-1 rounded-full text-xs bg-gray-100 border border-gray-200">{GRADE_LABELS[s.grade||'P2']}</span></td>
-                              <td className="p-3 text-right align-middle"><span className="text-xl font-bold text-yellow-500">⭐ {s.stars}</span></td>
-                            </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <>
+                    {statsTab === 'students' ? (
+                        <div className="animate-fade-in">
+                            <div className="grid grid-cols-2 gap-4 mb-6">
+                                <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex items-center gap-4">
+                                    <div className="bg-blue-200 p-3 rounded-full text-blue-700"><Users size={24}/></div>
+                                    <div>
+                                        <div className="text-2xl font-black text-blue-900">{filteredStatistics.totalStudents}</div>
+                                        <div className="text-xs text-blue-600 font-bold uppercase">นักเรียนทั้งหมด</div>
+                                    </div>
+                                </div>
+                                <div className="bg-green-50 p-4 rounded-2xl border border-green-100 flex items-center gap-4">
+                                    <div className="bg-green-200 p-3 rounded-full text-green-700"><Activity size={24}/></div>
+                                    <div>
+                                        <div className="text-2xl font-black text-green-900">{filteredStatistics.activeStudents}</div>
+                                        <div className="text-xs text-green-600 font-bold uppercase">เคยเข้าใช้งาน</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="overflow-x-auto bg-white rounded-2xl border border-gray-100 shadow-sm">
+                                <table className="w-full text-left text-sm border-collapse">
+                                <thead className="bg-gray-50 text-gray-600 border-b border-gray-200">
+                                    <tr>
+                                        <th className="p-4 w-20 text-center">รูป</th>
+                                        <th className="p-4">ข้อมูลนักเรียน</th>
+                                        <th className="p-4 text-center">ระดับชั้น</th>
+                                        <th className="p-4 text-center">เข้าใช้งาน (ครั้ง)</th>
+                                        <th className="p-4 text-center">ใช้งานล่าสุด</th>
+                                        <th className="p-4 text-right">รายละเอียด</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredStatistics.filteredStudents.length > 0 ? filteredStatistics.filteredStudents.map(s => {
+                                        const { totalExams, lastExam } = getStudentActivity(s.id);
+                                        return (
+                                            <tr key={s.id} className="border-b hover:bg-gray-50 transition-colors last:border-0">
+                                                <td className="p-3 text-center"><div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-2xl mx-auto">{s.avatar || '👤'}</div></td>
+                                                <td className="p-3 align-middle">
+                                                    <div className="font-bold text-gray-900 text-base mb-1">{s.name}</div>
+                                                    <span className="text-xs text-gray-500 bg-white border border-gray-200 px-2 py-0.5 rounded">ID: {s.id}</span>
+                                                </td>
+                                                <td className="p-3 text-center align-middle"><span className="px-2 py-1 rounded-full text-xs bg-gray-100 border border-gray-200 text-gray-600 font-bold">{GRADE_LABELS[s.grade||'P2']}</span></td>
+                                                <td className="p-3 text-center align-middle font-bold text-gray-700">
+                                                    {totalExams > 0 ? totalExams : <span className="text-gray-300">-</span>}
+                                                </td>
+                                                <td className="p-3 text-center align-middle text-gray-500 text-xs">
+                                                    {lastExam ? new Date(lastExam).toLocaleDateString('th-TH') : '-'}
+                                                </td>
+                                                <td className="p-3 text-right align-middle">
+                                                    <button onClick={() => setViewingStudentDetail(s)} className="bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg text-xs font-bold border border-blue-200 flex items-center gap-1 ml-auto">
+                                                        <Search size={14}/> ดูคะแนน
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    }) : (
+                                        <tr><td colSpan={6} className="p-8 text-center text-gray-400">ไม่พบข้อมูลนักเรียนในระดับชั้นนี้</td></tr>
+                                    )}
+                                </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="animate-fade-in space-y-6">
+                            {/* Highlights */}
+                            <div className="grid md:grid-cols-2 gap-4">
+                                <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+                                    <TrendingUp className="absolute top-4 right-4 text-white/20" size={60} />
+                                    <div className="relative z-10">
+                                        <h4 className="text-sm font-bold text-indigo-100 uppercase mb-2">วิชายอดนิยม (เข้าใช้งานบ่อยสุด)</h4>
+                                        <div className="text-3xl font-black mb-1">{filteredStatistics.mostPopular ? filteredStatistics.mostPopular.name : '-'}</div>
+                                        <div className="bg-white/20 inline-block px-3 py-1 rounded-lg text-xs font-bold backdrop-blur-sm">
+                                            {filteredStatistics.mostPopular ? `${filteredStatistics.mostPopular.attempts} ครั้ง` : 'ไม่มีข้อมูล'}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+                                    <Trophy className="absolute top-4 right-4 text-white/20" size={60} />
+                                    <div className="relative z-10">
+                                        <h4 className="text-sm font-bold text-emerald-100 uppercase mb-2">คะแนนเฉลี่ยสูงสุด</h4>
+                                        <div className="text-3xl font-black mb-1">{filteredStatistics.bestPerformance ? filteredStatistics.bestPerformance.name : '-'}</div>
+                                        <div className="bg-white/20 inline-block px-3 py-1 rounded-lg text-xs font-bold backdrop-blur-sm">
+                                            {filteredStatistics.bestPerformance ? `เฉลี่ย ${filteredStatistics.bestPerformance.avgScore}%` : 'ไม่มีข้อมูล'}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Chart */}
+                            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-80">
+                                <h4 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><BarChart2 size={18}/> จำนวนการเข้าทำข้อสอบแยกตามวิชา {statsGrade !== 'ALL' && `(ชั้น ${GRADE_LABELS[statsGrade]})`}</h4>
+                                {filteredStatistics.subjectsData.length > 0 ? (
+                                    <ResponsiveContainer width="100%" height="90%">
+                                        <BarChart data={filteredStatistics.subjectsData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                            <XAxis dataKey="name" tick={{fontSize: 12}} />
+                                            <YAxis allowDecimals={false} />
+                                            <Tooltip cursor={{fill: '#f3f4f6'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'}} />
+                                            <Bar dataKey="attempts" name="จำนวนครั้ง" fill="#8884d8" radius={[4, 4, 0, 0]} barSize={40}>
+                                                {filteredStatistics.subjectsData.map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={['#6366f1', '#ec4899', '#f59e0b', '#10b981'][index % 4]} />
+                                                ))}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                ) : (
+                                    <div className="h-full flex items-center justify-center text-gray-400">ไม่มีข้อมูลสถิติในระดับชั้นนี้</div>
+                                )}
+                            </div>
+
+                            {/* Table */}
+                            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-gray-50 text-gray-600 font-bold border-b border-gray-200">
+                                        <tr>
+                                            <th className="p-4">วิชา</th>
+                                            <th className="p-4 text-center">เข้าใช้งาน (ครั้ง)</th>
+                                            <th className="p-4 text-right">คะแนนเฉลี่ย</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredStatistics.subjectsData.map((sub, idx) => (
+                                            <tr key={idx} className="border-b last:border-0 hover:bg-gray-50">
+                                                <td className="p-4 font-bold text-gray-800">{sub.name}</td>
+                                                <td className="p-4 text-center">
+                                                    <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded font-bold text-xs">{sub.attempts}</span>
+                                                </td>
+                                                <td className="p-4 text-right font-bold text-gray-700">{sub.avgScore}%</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -1026,7 +1265,9 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                           <div className="grid grid-cols-2 gap-4 mb-2">
                               <div>
                                   <label className="block text-xs font-bold mb-1">ระดับชั้น</label>
-                                  <div className="w-full p-2 border rounded-lg bg-gray-100 text-gray-500 font-bold">{GRADE_LABELS[aiGrade]}</div>
+                                  <select value={aiGrade} onChange={(e)=>setAiGrade(e.target.value)} className="w-full p-2 border rounded-lg">
+                                      {GRADE_OPTIONS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
+                                  </select>
                               </div>
                               <div>
                                   <label className="block text-xs font-bold mb-1">วิชา</label>
@@ -1174,6 +1415,49 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                               })}
                           </tbody>
                       </table>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* STUDENT DETAIL MODAL */}
+      {viewingStudentDetail && (
+          <div className="fixed inset-0 bg-black/60 z-[150] flex items-center justify-center p-4 backdrop-blur-sm">
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh] animate-fade-in">
+                  <div className="bg-blue-600 p-6 text-white relative">
+                      <button onClick={() => setViewingStudentDetail(null)} className="absolute top-4 right-4 bg-white/20 p-2 rounded-full hover:bg-white/30 transition"><X size={20}/></button>
+                      <div className="flex flex-col items-center">
+                          <div className="text-6xl bg-white p-2 rounded-full shadow-lg border-4 border-blue-200 mb-2">{viewingStudentDetail.avatar}</div>
+                          <h3 className="text-2xl font-black">{viewingStudentDetail.name}</h3>
+                          <span className="bg-blue-700 px-3 py-1 rounded-full text-sm font-bold border border-blue-500 mt-1">ID: {viewingStudentDetail.id}</span>
+                      </div>
+                  </div>
+                  <div className="p-6 overflow-y-auto flex-1 bg-gray-50">
+                      <h4 className="font-bold text-gray-500 text-sm uppercase tracking-wide mb-4 flex items-center gap-2"><BarChart2 size={16}/> คะแนนเฉลี่ยรายวิชา</h4>
+                      
+                      <div className="space-y-3">
+                          {getStudentSubjectStats(viewingStudentDetail.id).length === 0 ? (
+                              <div className="text-center text-gray-400 py-10">ยังไม่มีข้อมูลการสอบ</div>
+                          ) : (
+                              getStudentSubjectStats(viewingStudentDetail.id).map((stat, idx) => (
+                                  <div key={idx} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
+                                      <div className="font-bold text-gray-800">{stat.subject}</div>
+                                      <div className="flex items-center gap-4">
+                                          <div className="text-right">
+                                              <div className="text-xs text-gray-400">สอบ {stat.count} ครั้ง</div>
+                                              <div className="font-bold text-blue-600 text-lg">{stat.avg}%</div>
+                                          </div>
+                                          <div className="w-12 h-12 relative">
+                                              <svg viewBox="0 0 36 36" className="w-full h-full transform -rotate-90">
+                                                  <path className="text-gray-100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="4" />
+                                                  <path className={`${stat.avg >= 80 ? 'text-green-500' : stat.avg >= 50 ? 'text-yellow-500' : 'text-red-500'}`} strokeDasharray={`${stat.avg}, 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="4" />
+                                              </svg>
+                                          </div>
+                                      </div>
+                                  </div>
+                              ))
+                          )}
+                      </div>
                   </div>
               </div>
           </div>
