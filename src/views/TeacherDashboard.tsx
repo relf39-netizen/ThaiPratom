@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Teacher, Student, Subject, Assignment, Question, SubjectDef } from '../types';
-import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, Sparkles, Wand2, Library, ArrowLeft, GraduationCap, Trash2, Edit, UserCog, Clock, PenTool, Bot, Info, ExternalLink, ImageIcon } from 'lucide-react';
+import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, Sparkles, Wand2, Library, ArrowLeft, GraduationCap, Trash2, Edit, UserCog, PenTool, Clock } from 'lucide-react';
 import { getTeacherDashboard, manageStudent, addAssignment, addQuestion, editQuestion, deleteQuestion, deleteAssignment, getTeachers, manageTeacher } from '../services/api';
 import { generateQuestionWithAI, GeneratedQuestion } from '../services/aiService';
 import { getSchoolSubjects, addSubject, deleteSubject } from '../services/subjectService';
@@ -106,6 +106,12 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [aiCreateAssignment, setAiCreateAssignment] = useState(false);
   const [aiDeadline, setAiDeadline] = useState('');
 
+  // Assignment Form State
+  const [assignSubject, setAssignSubject] = useState<string>(Object.values(Subject)[0] || 'คณิตศาสตร์');
+  const [assignGrade, setAssignGrade] = useState('ALL'); // 🟢 Added Grade State
+  const [assignCount, setAssignCount] = useState(10);
+  const [assignDeadline, setAssignDeadline] = useState('');
+
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
 
   const [deleteModal, setDeleteModal] = useState<{
@@ -182,16 +188,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       setSubjectLoading(false);
   };
 
-  const verifyDataChange = async (checkFn: (students: Student[]) => boolean) => {
-      for (let i = 0; i < 5; i++) { 
-          await new Promise(r => setTimeout(r, 1000)); 
-          const data = await getTeacherDashboard(teacher.school);
-          const allSchoolStudents = (data.students || []).filter((s: Student) => s.school === teacher.school);
-          if (checkFn(allSchoolStudents)) return allSchoolStudents; 
-      }
-      return null; 
-  };
-
   const openDeleteModal = (targetId: string, type: 'STUDENT' | 'ASSIGNMENT' | 'QUESTION' | 'SUBJECT' | 'TEACHER') => {
       let title = '', message = '';
       if (type === 'STUDENT') { title = 'ยืนยันลบนักเรียน'; message = 'ข้อมูลคะแนนจะหายไปด้วย'; }
@@ -240,6 +236,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       }
   };
 
+  // ... (Keep existing Teacher/Student edit functions) ...
   const handleEditStudent = (s: Student) => {
       setShowGradeModal(false);
       setEditingStudentId(s.id);
@@ -253,30 +250,25 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const handleSaveStudent = async () => {
       if (!newStudentName) return alert("กรุณากรอกชื่อนักเรียน");
       const currentTeacherId = normalizeId(teacher.id);
-      
       setIsSaving(true);
       const action = editingStudentId ? 'edit' : 'add';
-      
       const payload = {
           action,
-          id: editingStudentId || undefined, // undefined for add
+          id: editingStudentId || undefined,
           name: newStudentName,
           school: teacher.school,
           avatar: newStudentAvatar,
           grade: newStudentGrade,
           teacherId: currentTeacherId
       };
-
       try {
           const res = await manageStudent(payload as any);
           if (res.success) { 
              if (editingStudentId) {
-                 // Update local state
                  setStudents(prev => prev.map(s => s.id === editingStudentId ? { ...s, name: newStudentName, avatar: newStudentAvatar, grade: newStudentGrade, teacherId: currentTeacherId } : s));
                  setEditingStudentId(null);
                  alert('✅ บันทึกข้อมูลสำเร็จ');
              } else if (res.student) {
-                 // Add new to local state
                  setStudents(prev => [...prev, res.student!]);
                  setCreatedStudent(res.student);
              }
@@ -301,34 +293,35 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   };
 
   const handleSaveTeacher = async () => {
-      if (!newTeacherName || !newTeacherUsername || !newTeacherPassword || !newTeacherSchool) {
-          return alert("กรุณากรอกข้อมูลให้ครบถ้วน");
-      }
-
+      if (!newTeacherName || !newTeacherUsername || !newTeacherPassword || !newTeacherSchool) return alert("กรุณากรอกข้อมูลให้ครบถ้วน");
       setIsSaving(true);
       const action = editingTeacherId ? 'edit' : 'add';
-
-      const result = await manageTeacher({
-          action,
-          id: editingTeacherId || undefined,
-          name: newTeacherName,
-          username: newTeacherUsername,
-          password: newTeacherPassword,
-          school: newTeacherSchool
-      });
-
+      const result = await manageTeacher({ action, id: editingTeacherId || undefined, name: newTeacherName, username: newTeacherUsername, password: newTeacherPassword, school: newTeacherSchool });
       if (result.success) {
           alert('✅ บันทึกข้อมูลครูสำเร็จ');
           loadTeachers();
-          setNewTeacherName('');
-          setNewTeacherUsername('');
-          setNewTeacherPassword('');
-          setNewTeacherSchool('');
-          setEditingTeacherId(null);
+          setNewTeacherName(''); setNewTeacherUsername(''); setNewTeacherPassword(''); setNewTeacherSchool(''); setEditingTeacherId(null);
       } else {
           alert('บันทึกไม่สำเร็จ: ' + (result.message || 'Unknown error'));
       }
       setIsSaving(false);
+  };
+
+  // 🟢 Create Assignment Logic
+  const handleCreateAssignment = async () => {
+    if (!assignDeadline) return alert('กรุณาเลือกวันกำหนดส่ง');
+    setIsSaving(true);
+    // Pass Grade to API
+    const success = await addAssignment(teacher.school, assignSubject, assignGrade, assignCount, assignDeadline, teacher.name);
+    if (success) {
+      alert('✅ สั่งการบ้านเรียบร้อยแล้ว');
+      setAssignDeadline('');
+      const data = await getTeacherDashboard(teacher.school);
+      setAssignments(data.assignments || []);
+    } else {
+      alert('เกิดข้อผิดพลาดในการบันทึกการบ้าน');
+    }
+    setIsSaving(false);
   };
   
   const handleEditQuestion = (q: Question) => {
@@ -381,9 +374,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
     if (success) { 
         alert('✅ บันทึกข้อสอบเรียบร้อยแล้ว'); 
         setEditingQuestionId(null); 
-        setQText(''); 
-        setQImage('');
-        setQChoices({c1:'', c2:'', c3:'', c4:''}); 
+        setQText(''); setQImage(''); setQChoices({c1:'', c2:'', c3:'', c4:''}); 
         setShowManualQForm(false);
         await loadData(); 
     } else { 
@@ -436,9 +427,11 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         if (success) successCount++;
      }
 
+     // 🟢 AI Assignment Creation Logic
      if (aiCreateAssignment && successCount > 0) {
          setProcessingMessage(`กำลังสร้างการบ้าน...`);
-         await addAssignment(teacher.school, aiTopic, aiGrade, successCount, aiDeadline, teacher.name);
+         // Use the AI selected subject and grade for the assignment
+         await addAssignment(teacher.school, qSubject, aiGrade, successCount, aiDeadline, teacher.name);
      }
 
      setIsProcessing(false);
@@ -463,7 +456,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   
   const filteredQuestions = (() => {
       const currentTid = normalizeId(teacher.id);
-      
       let filtered = questions;
       if (qBankSelectedGrade) {
           filtered = filtered.filter(q => (q.grade || 'P2') === qBankSelectedGrade);
@@ -521,7 +513,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         </div>
       )}
 
-      {/* Render Tabs content here... */}
       {activeTab !== 'menu' && (
         <div className="bg-white rounded-3xl shadow-sm p-4 md:p-6 min-h-[400px] relative animate-fade-in">
              <button onClick={() => { setActiveTab('menu'); setQBankSelectedGrade(null); setViewingSubjectGrade(null); }} className="mb-6 flex items-center gap-2 text-gray-500 hover:text-purple-600 font-bold transition-colors"><div className="bg-gray-100 p-2 rounded-full"><ArrowLeft size={20} /></div> กลับเมนูหลัก</button>
@@ -753,13 +744,48 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                             <Wand2 size={20} /> เริ่มสร้างแบบฝึกหัด
                         </button>
                     </div>
+
+                     <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 mb-8">
+                        <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Calendar className="text-orange-500"/> สั่งงานใหม่ (Manual)</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 block mb-1">ระดับชั้น</label>
+                                <select value={assignGrade} onChange={(e) => setAssignGrade(e.target.value)} className="w-full p-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-orange-200 outline-none">
+                                    <option value="ALL">ทุกระดับชั้น</option>
+                                    {GRADE_OPTIONS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 block mb-1">วิชา</label>
+                                <select value={assignSubject} onChange={(e) => setAssignSubject(e.target.value)} className="w-full p-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-orange-200 outline-none">
+                                    <option disabled>-- วิชาหลัก --</option>
+                                    {Object.values(Subject).map((s) => <option key={s} value={s}>{s}</option>)}
+                                    {schoolSubjects.length > 0 && <option disabled>-- วิชาเพิ่มเติม --</option>}
+                                    {schoolSubjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 block mb-1">จำนวนข้อ</label>
+                                <input type="number" value={assignCount} onChange={(e) => setAssignCount(Number(e.target.value))} className="w-full p-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-orange-200 outline-none" min="5" max="50" />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 block mb-1">ส่งภายใน</label>
+                                <input type="date" value={assignDeadline} onChange={(e) => setAssignDeadline(e.target.value)} className="w-full p-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-orange-200 outline-none" />
+                            </div>
+                            <div className="flex items-end col-span-2 md:col-span-1">
+                                <button onClick={handleCreateAssignment} disabled={isSaving} className="w-full bg-orange-500 text-white py-2 rounded-lg font-bold shadow hover:bg-orange-600 disabled:opacity-50 flex items-center justify-center gap-2 h-[42px]">
+                                    {isSaving ? '...' : <><Save size={16}/> สั่งงาน</>}
+                                </button>
+                            </div>
+                        </div>
+                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                          {assignments.slice().reverse().map((a) => (
                              <div key={a.id} onClick={() => setSelectedAssignment(a)} className="bg-white rounded-2xl p-5 shadow-sm border hover:shadow-md cursor-pointer">
                                  <h4 className="font-bold text-gray-800 line-clamp-1">{a.subject}</h4>
                                  <div className="flex gap-2 mb-2">
-                                     <span className="text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-500">{GRADE_LABELS[a.grade||'P2']}</span>
+                                     <span className="text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-500">{GRADE_LABELS[a.grade||'P2'] || (a.grade === 'ALL' ? 'ทุกชั้น' : a.grade)}</span>
                                      <div className="text-xs text-gray-400">{formatDate(a.deadline)}</div>
                                  </div>
                                  <div className="flex justify-between items-end">
@@ -1157,14 +1183,19 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   );
 };
 
-const MenuCard: React.FC<{ icon: React.ReactNode; title: string; desc: string; color: string; onClick: () => void }> = ({ icon, title, desc, color, onClick }) => (
-    <button onClick={onClick} className={`p-6 rounded-2xl border-2 text-left transition-all hover:-translate-y-1 shadow-sm hover:shadow-md flex flex-col items-start gap-3 ${color} bg-white`}>
-        <div className="p-3 rounded-xl bg-white/80 backdrop-blur-sm shadow-sm">{icon}</div>
-        <div>
-            <h3 className="text-lg font-bold">{title}</h3>
-            <p className="text-xs opacity-80 font-medium">{desc}</p>
-        </div>
-    </button>
+const MenuCard = ({ icon, title, desc, color, onClick }: any) => (
+  <button 
+    onClick={onClick} 
+    className="bg-white p-6 rounded-[24px] border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 text-left flex flex-col gap-4 h-full group"
+  >
+    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl transition-transform group-hover:scale-110 ${color}`}>
+        {icon}
+    </div>
+    <div>
+        <h3 className="font-bold text-gray-800 text-lg mb-1">{title}</h3>
+        <p className="text-sm text-gray-500 font-medium">{desc}</p>
+    </div>
+  </button>
 );
 
 export default TeacherDashboard;

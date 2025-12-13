@@ -26,7 +26,9 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
   const [questions, setQuestions] = useState<Question[]>([]);
   const [countdown, setCountdown] = useState(5);
   
+  // Presence Score Tracking
   const [scores, setScores] = useState<any>({});
+  const [myScore, setMyScore] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
   
   const [hasAnswered, setHasAnswered] = useState(false);
@@ -40,6 +42,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
   const [timer, setTimer] = useState(0);
   const [maxTime, setMaxTime] = useState(20);
   
+  // Check if admin by ID or by grade property set in App.tsx
   const isAdmin = student.id === '99999'; 
   const timerRef = useRef<any>(null);
   const channelRef = useRef<any>(null);
@@ -59,9 +62,9 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
       if (initialRoomCode) {
           setRoomCode(initialRoomCode);
           setInputCode(initialRoomCode);
-          if (isAdmin) connectToRoom(initialRoomCode);
+          connectToRoom(initialRoomCode);
       }
-  }, [initialRoomCode, isAdmin]);
+  }, [initialRoomCode]);
 
   // Audio Control
   const toggleSound = () => {
@@ -127,7 +130,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
     setIsJoining(true);
     setJoinError('');
     
-    // 1. Fetch Initial State
+    // 1. Fetch Initial State from DB
     const { data: room, error } = await supabase.from('game_rooms').select('*').eq('room_code', code).single();
     
     if (error || !room) {
@@ -148,7 +151,6 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
         setQuestions(room.questions);
     }
     
-    setScores(room.scores || {});
     setIsJoining(false);
     
     // 2. Subscribe to Changes
@@ -174,28 +176,34 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
         }
 
         // Sync Status
-        // For Students: Always sync to server status
-        // For Admin: Only update if different (to prevent loops since admin controls it)
         if (!isAdmin || statusRef.current !== newRoom.status) {
            setStatus(newRoom.status as GameStatus);
         }
         
         setCurrentQuestionIndex(newRoom.current_question_index);
         
-        // Sync timer
-        if (newRoom.status !== 'PLAYING' || !isAdmin) {
+        // Sync timer (Students only listen)
+        if (!isAdmin) {
              setTimer(newRoom.timer);
         }
-        setScores(newRoom.scores || {});
     })
     .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState();
         const onlinePlayers = Object.values(state).flat().map((p: any) => p.user);
         setPlayers(onlinePlayers);
+        
+        // Extract scores from presence
+        const presenceScores: any = {};
+        onlinePlayers.forEach((p: any) => {
+            presenceScores[p.id] = p.score || 0;
+        });
+        setScores(presenceScores);
     })
     .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-            await channel.track({ user: { id: student.id, name: student.name, avatar: student.avatar } });
+            await channel.track({ 
+                user: { id: student.id, name: student.name, avatar: student.avatar, score: myScore } 
+            });
         }
     });
   };
@@ -234,12 +242,16 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
                      if (prev !== data.current_question_index) return data.current_question_index;
                      return prev;
                  });
+                 // Sync timer loosely
+                 if (Math.abs(data.timer - timer) > 2) {
+                     setTimer(data.timer);
+                 }
             }
         }
     }, 2000); // Check every 2 seconds
 
     return () => clearInterval(interval);
-  }, [status, isAdmin, roomCode]);
+  }, [status, isAdmin, roomCode, timer]);
 
   // --- GAME LOOP (ADMIN ONLY) ---
   useEffect(() => {
@@ -260,7 +272,6 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
                 clearInterval(timerRef.current);
                 // Trigger PLAYING
                 supabase.from('game_rooms').update({ status: 'PLAYING', timer: maxTime }).eq('room_code', roomCode).then();
-                // 🟢 Force local update immediately
                 setStatus('PLAYING');
             }
         }, 1000);
@@ -272,6 +283,11 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
             currentTimer--;
             setTimer(currentTimer); // Update local for admin UI
             
+            // Sync to DB every second (Admin is the timekeeper)
+            if (currentTimer >= 0) {
+                supabase.from('game_rooms').update({ timer: currentTimer }).eq('room_code', roomCode).then();
+            }
+            
             if (currentTimer < 0) {
                 clearInterval(timerRef.current);
                 if (currentQuestionIndex < questions.length - 1) {
@@ -281,12 +297,10 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
                         status: 'PLAYING' // Refresh status to trigger clients
                     }).eq('room_code', roomCode).then();
                     
-                    // 🟢 Force local update immediately for loop to restart
                     setCurrentQuestionIndex(prev => prev + 1);
                     setTimer(maxTime);
                 } else {
                     supabase.from('game_rooms').update({ status: 'FINISHED', timer: 0 }).eq('room_code', roomCode).then();
-                    // 🟢 Force local update immediately
                     setStatus('FINISHED');
                 }
             }
@@ -298,10 +312,10 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
     };
   }, [status, isAdmin, maxTime, currentQuestionIndex, questions.length, roomCode]);
 
-  // Client Side Timer (Approximate)
+  // Client Side Timer Animation (Approximate)
   useEffect(() => {
       if (!isAdmin && status === 'PLAYING') {
-          setTimer(maxTime);
+          // Just animate down locally for smooth UI, real sync happens via socket/polling
           const interval = setInterval(() => {
               setTimer(t => t > 0 ? t - 1 : 0);
           }, 1000);
@@ -326,16 +340,22 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
      setSelectedChoice(null);
   }, [currentQuestionIndex]);
 
+  // Update Presence Score when local score changes
+  useEffect(() => {
+      if (channelRef.current && status === 'PLAYING') {
+          channelRef.current.track({ 
+              user: { id: student.id, name: student.name, avatar: student.avatar, score: myScore } 
+          });
+      }
+  }, [myScore]);
+
   const handleStartGame = async () => {
     if (!roomCode) return;
-    
     const { error } = await supabase.from('game_rooms').update({ 
-        status: 'COUNTDOWN',
-        scores: {} 
+        status: 'COUNTDOWN'
     }).eq('room_code', roomCode);
 
     if (!error) {
-        // 🟢 FIX: Update local status immediately
         setStatus('COUNTDOWN');
     } else {
         alert("Error starting game: " + error.message);
@@ -347,14 +367,14 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
     const { error } = await supabase.from('game_rooms').update({ 
         status: 'LOBBY', 
         current_question_index: 0, 
-        timer: 0,
-        scores: {}
+        timer: 0
     }).eq('room_code', roomCode);
     
     if (!error) {
         setStatus('LOBBY'); 
         setCurrentQuestionIndex(0);
         setCorrectCount(0);
+        setMyScore(0);
     }
   };
 
@@ -371,7 +391,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
     const normChoice = normalizeId(choiceId);
     const normCorrect = normalizeId(currentQ.correctChoiceId);
     
-    // Simple check
+    // Check answer
     let isCorrect = normChoice === normCorrect;
     
     // Fallback index check
@@ -390,13 +410,8 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
        playSFX('CORRECT'); 
        speak("เยี่ยมมาก");
 
-       // Optimistic update locally
-       const newScore = (scores[student.id] || 0) + points;
-       const newScores = { ...scores, [student.id]: newScore };
-       setScores(newScores);
-
-       // Send to DB
-       await supabase.from('game_rooms').update({ scores: newScores }).eq('room_code', roomCode);
+       // Update Score Locally -> Effect will sync to Presence
+       setMyScore(prev => prev + points);
 
     } else {
        playSFX('WRONG'); 
@@ -406,7 +421,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
 
   const handleFinishAndExit = () => {
       if (status === 'FINISHED' && onFinish && !isAdmin) {
-          onFinish(correctCount, questions.length);
+          onFinish(myScore, questions.length);
       } else {
           onExit();
       }
@@ -471,23 +486,6 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
               </div>
           </div>
       );
-  }
-
-  // 2. Audio Enable Screen
-  if (!audioEnabled) {
-    return (
-        <div className="fixed inset-0 bg-gradient-to-br from-indigo-900 to-purple-900 z-[999] flex flex-col items-center justify-center p-6 text-white text-center">
-            <div className="bg-white/10 p-6 rounded-full mb-6 animate-bounce">
-                <Volume2 size={64} />
-            </div>
-            <h2 className="text-3xl font-bold mb-4">พร้อมแข่งขันหรือยัง?</h2>
-            <p className="mb-8 text-blue-100 max-w-md">กดปุ่มด้านล่างเพื่อเข้าห้องได้เลย!</p>
-            <button onClick={enableAudio} className="bg-yellow-400 text-yellow-900 px-10 py-4 rounded-full text-xl font-black shadow-[0_0_20px_rgba(250,204,21,0.6)] hover:scale-105 transition-transform flex items-center gap-3 animate-pulse cursor-pointer">
-                <Zap fill="currentColor" /> เข้าสู่สนามแข่ง
-            </button>
-            <button onClick={onExit} className="mt-8 text-white/50 underline text-sm">กลับหน้าหลัก</button>
-        </div>
-    );
   }
 
   // 3. Lobby Screen
@@ -652,7 +650,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
                 </h3>
                 <div className="bg-white/10 p-3 rounded-2xl mb-4 flex justify-between items-center border border-white/20">
                     <span className="font-bold text-sm">คะแนนของฉัน</span>
-                    <span className="font-black text-2xl text-yellow-400 animate-pulse">{scores[student.id] || 0}</span>
+                    <span className="font-black text-2xl text-yellow-400 animate-pulse">{myScore}</span>
                 </div>
                 
                 <div className="space-y-3">
