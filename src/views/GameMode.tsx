@@ -44,6 +44,14 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
   const timerRef = useRef<any>(null);
   const channelRef = useRef<any>(null);
 
+  // Refs for Listener Closure Safety (Fixes "Stale State" bugs)
+  const statusRef = useRef(status);
+  const questionsRef = useRef(questions);
+
+  // Keep refs synced
+  useEffect(() => { statusRef.current = status; }, [status]);
+  useEffect(() => { questionsRef.current = questions; }, [questions]);
+
   const getPlayerName = (name: any) => String(name || 'Player').split(' ')[0];
 
   // 1. Initial Room Setup
@@ -156,8 +164,8 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_rooms', filter: `room_code=eq.${code}` }, async (payload) => {
         const newRoom = payload.new;
         
-        // Critical Fix: If questions are missing locally but status is PLAYING, re-fetch
-        if (newRoom.status === 'PLAYING' && questions.length === 0) {
+        // Critical Fix: Use Ref to check stale questions state
+        if (newRoom.status === 'PLAYING' && questionsRef.current.length === 0) {
             console.log("Missing questions, refetching...");
             const { data: refreshedRoom } = await supabase.from('game_rooms').select('*').eq('room_code', code).single();
             if (refreshedRoom?.questions) {
@@ -165,15 +173,16 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
             }
         }
 
-        // Only update status if it's different to prevent loops/re-renders if admin controls it locally
-        if (status !== newRoom.status) {
+        // Sync Status
+        // For Students: Always sync to server status
+        // For Admin: Only update if different (to prevent loops since admin controls it)
+        if (!isAdmin || statusRef.current !== newRoom.status) {
            setStatus(newRoom.status as GameStatus);
         }
         
         setCurrentQuestionIndex(newRoom.current_question_index);
         
-        // Sync timer only if not playing to avoid jitter, OR if heavily desynced
-        // Note: Admin controls timer locally in PLAYING state
+        // Sync timer
         if (newRoom.status !== 'PLAYING' || !isAdmin) {
              setTimer(newRoom.timer);
         }
@@ -196,6 +205,22 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
           if (channelRef.current) supabase.removeChannel(channelRef.current);
       };
   }, []);
+
+  // --- FALLBACK POLLING (SAFETY NET) ---
+  // If websocket fails or packet is missed, this ensures students still start the game.
+  useEffect(() => {
+    if (isAdmin || status !== 'LOBBY' || !roomCode) return;
+    
+    const interval = setInterval(async () => {
+        const { data } = await supabase.from('game_rooms').select('status').eq('room_code', roomCode).single();
+        // If server says game started, force start on client
+        if (data && data.status !== 'LOBBY') {
+             setStatus(data.status as GameStatus);
+        }
+    }, 2000); // Check every 2 seconds
+
+    return () => clearInterval(interval);
+  }, [status, isAdmin, roomCode]);
 
   // --- GAME LOOP (ADMIN ONLY) ---
   useEffect(() => {
@@ -280,7 +305,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
     }).eq('room_code', roomCode);
 
     if (!error) {
-        // 🟢 FIX: Update local status immediately so the useEffect loop starts even if DB update callback lags
+        // 🟢 FIX: Update local status immediately
         setStatus('COUNTDOWN');
     } else {
         alert("Error starting game: " + error.message);
@@ -297,7 +322,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
     }).eq('room_code', roomCode);
     
     if (!error) {
-        setStatus('LOBBY'); // 🟢 FIX
+        setStatus('LOBBY'); 
         setCurrentQuestionIndex(0);
         setCorrectCount(0);
     }
