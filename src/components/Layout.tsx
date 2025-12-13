@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { BookOpen, Trophy, BarChart, LogOut, Music, Volume2, VolumeX, Home } from 'lucide-react';
 
@@ -67,8 +68,8 @@ const Layout: React.FC<LayoutProps> = ({
         {children}
       </main>
 
-      {/* Mobile Bottom Navigation */}
-      {studentName && (
+      {/* Mobile Bottom Navigation - ซ่อนเมื่ออยู่ในหน้า Practice หรือ Game */}
+      {studentName && !['practice', 'game', 'teacher-game'].includes(currentPage) && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t-4 border-yellow-200 pb-safe shadow-[0_-4px_10px_rgba(0,0,0,0.05)] rounded-t-3xl z-40">
           <div className="flex justify-around py-3 px-2">
             <NavItem 
@@ -83,7 +84,7 @@ const Layout: React.FC<LayoutProps> = ({
               label="ฝึกฝน" 
               isActive={currentPage === 'practice'} 
               color="text-blue-500"
-              onClick={() => onNavigate('dashboard')} // Dashboard handles practice selection now
+              onClick={() => onNavigate('dashboard')} 
             />
             <NavItem 
               icon={<Trophy size={24} />} 

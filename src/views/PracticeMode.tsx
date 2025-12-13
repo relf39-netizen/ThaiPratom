@@ -101,15 +101,13 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
               stopSpeaking();
           }
       }
-  }, [currentIndex, loading, questions]); // ลบ isAutoPlay ออกเพื่อไม่ให้ Trigger ตอนกด Toggle, ให้กด Toggle แล้วจัดการเอง
+  }, [currentIndex, loading, questions]); 
 
   const toggleAutoPlay = () => {
       if (isAutoPlay) {
-          // ถ้าเปิดอยู่ -> ปิดเสียงทันที
           setIsAutoPlay(false);
           stopSpeaking();
       } else {
-          // ถ้าปิดอยู่ -> เปิดเสียงและเริ่มอ่านข้อปัจจุบันทันที
           setIsAutoPlay(true);
           const currentQ = questions[currentIndex];
           if (currentQ) playQuestionAudio(currentQ);
@@ -121,7 +119,6 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
   const handleChoiceSelect = (choiceId: string) => {
     if (isSubmitted) return; 
     
-    // Stop reading choices immediately
     stopSpeaking();
 
     setSelectedChoice(choiceId);
@@ -138,7 +135,6 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
       if (isAutoPlay) speak("ยังไม่ถูกครับ มาดูเฉลยกัน", true);
     }
 
-    // Read Explanation only if AutoPlay is ON
     if (currentQuestion.explanation && isAutoPlay) {
         speak("คำอธิบาย.. " + currentQuestion.explanation, false);
     }
@@ -155,7 +151,6 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
     }
   };
 
-  // ปุ่มกดฟังเฉพาะจุด (ทำงานเสมอ แม้ปิด AutoPlay)
   const handleManualSpeak = (text: string) => {
       stopSpeaking();
       speak(text, true);
@@ -213,7 +208,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
             {currentQuestion.subject}
             </div>
             
-            {/* 🔊 ปุ่มเปิด/ปิดเสียง (Toggle) */}
+            {/* 🔊 ปุ่มเปิด/ปิดเสียง */}
             <button 
                 onClick={toggleAutoPlay}
                 className={`p-2 rounded-full transition shadow-sm border-2 ${isAutoPlay ? 'bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100' : 'bg-gray-100 text-gray-400 border-gray-200 hover:bg-gray-200'}`}
@@ -295,7 +290,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
                     )}
                   </button>
                   
-                  {/* Manual Choice Speak Button (เสมอทำงานเมื่อกดเอง) */}
+                  {/* Manual Choice Speak Button */}
                   <button 
                       onClick={(e) => { e.stopPropagation(); handleManualSpeak(choice.text); }}
                       className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-colors flex-shrink-0 bg-white shadow-sm border border-gray-100"
@@ -309,8 +304,8 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
         </div>
       </div>
 
-      {/* Footer Actions (Only show when submitted) */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur border-t border-gray-200 md:static md:bg-transparent md:border-0 md:p-0 z-20 min-h-[100px]">
+      {/* Footer Actions - Increased Z-Index to 50 */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur border-t border-gray-200 md:static md:bg-transparent md:border-0 md:p-0 z-50 min-h-[100px]">
         <div className="max-w-3xl mx-auto">
           {isSubmitted ? (
             <div className="space-y-4 animate-fade-in">
