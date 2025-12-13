@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Student, Question } from '../types';
-import { Users, Trophy, Play, CheckCircle, Volume2, VolumeX, Crown, Zap, XCircle, Gamepad2, Loader2, User } from 'lucide-react';
+import { Users, Trophy, Play, CheckCircle, Volume2, VolumeX, Gamepad2, Loader2, RefreshCw, Zap, LogOut, Delete } from 'lucide-react';
 import { speak, playBGM, stopBGM, playSFX, toggleMuteSystem } from '../utils/soundUtils';
 import { supabase } from '../services/supabaseClient';
 
@@ -18,6 +18,9 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
   const [status, setStatus] = useState<GameStatus>('WAITING');
   const [roomCode, setRoomCode] = useState<string>('');
   
+  // New State for Keypad Input
+  const [inputCode, setInputCode] = useState('');
+
   const [players, setPlayers] = useState<any[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -29,6 +32,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
   const [hasAnswered, setHasAnswered] = useState(false);
   const [selectedChoice, setSelectedChoice] = useState<string | null>(null); 
   const [joinError, setJoinError] = useState('');
+  const [isJoining, setIsJoining] = useState(false);
   
   const [isMuted, setIsMuted] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(false);
@@ -46,6 +50,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
   useEffect(() => {
       if (initialRoomCode) {
           setRoomCode(initialRoomCode);
+          setInputCode(initialRoomCode);
           if (isAdmin) connectToRoom(initialRoomCode);
       }
   }, [initialRoomCode, isAdmin]);
@@ -77,23 +82,50 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
 
   useEffect(() => { return () => stopBGM(); }, []);
 
+  // Keypad Handlers
+  const handleNumberClick = (num: string) => {
+    if (inputCode.length < 6) {
+        setInputCode(prev => prev + num);
+        setJoinError('');
+    }
+  };
+
+  const handleBackspace = () => {
+      setInputCode(prev => prev.slice(0, -1));
+      setJoinError('');
+  };
+
   const handleJoinRoom = () => {
-      const code = prompt("กรุณากรอกรหัสห้อง (Game PIN)");
-      if(code) {
-          setRoomCode(code);
-          connectToRoom(code);
+      if(inputCode && inputCode.trim().length > 0) {
+          setRoomCode(inputCode.trim());
+          connectToRoom(inputCode.trim());
       }
+  };
+
+  // Reset function to go back to input code screen
+  const handleBackToJoin = () => {
+      if (channelRef.current) supabase.removeChannel(channelRef.current);
+      setRoomCode('');
+      setInputCode('');
+      setQuestions([]);
+      setStatus('WAITING');
+      setJoinError('');
+      setIsJoining(false);
   };
 
   // --- SUPABASE REALTIME LOGIC ---
 
   const connectToRoom = async (code: string) => {
+    setIsJoining(true);
+    setJoinError('');
+    
     // 1. Fetch Initial State
     const { data: room, error } = await supabase.from('game_rooms').select('*').eq('room_code', code).single();
     
     if (error || !room) {
-        setJoinError('ไม่พบห้องสอบ');
+        setJoinError('ไม่พบห้องสอบ หรือรหัสผิด');
         setRoomCode('');
+        setIsJoining(false);
         return;
     }
 
@@ -102,10 +134,18 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
     setCurrentQuestionIndex(room.current_question_index);
     setTimer(room.timer);
     setMaxTime(room.time_per_question);
-    setQuestions(room.questions || []);
+    
+    // Safety check for questions
+    if (room.questions && Array.isArray(room.questions)) {
+        setQuestions(room.questions);
+    }
+    
     setScores(room.scores || {});
+    setIsJoining(false);
     
     // 2. Subscribe to Changes
+    if (channelRef.current) supabase.removeChannel(channelRef.current);
+
     const channel = supabase.channel(`game_${code}`, {
         config: { presence: { key: student.id } }
     });
@@ -113,12 +153,28 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
     channelRef.current = channel;
 
     channel
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_rooms', filter: `room_code=eq.${code}` }, (payload) => {
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_rooms', filter: `room_code=eq.${code}` }, async (payload) => {
         const newRoom = payload.new;
-        setStatus(newRoom.status as GameStatus);
+        
+        // Critical Fix: If questions are missing locally but status is PLAYING, re-fetch
+        if (newRoom.status === 'PLAYING' && questions.length === 0) {
+            console.log("Missing questions, refetching...");
+            const { data: refreshedRoom } = await supabase.from('game_rooms').select('*').eq('room_code', code).single();
+            if (refreshedRoom?.questions) {
+                setQuestions(refreshedRoom.questions);
+            }
+        }
+
+        // Only update status if it's different to prevent loops/re-renders if admin controls it locally
+        if (status !== newRoom.status) {
+           setStatus(newRoom.status as GameStatus);
+        }
+        
         setCurrentQuestionIndex(newRoom.current_question_index);
-        // Don't sync timer from DB every second to avoid lag, sync only on phase change or explicit sync
-        if (newRoom.status !== 'PLAYING') {
+        
+        // Sync timer only if not playing to avoid jitter, OR if heavily desynced
+        // Note: Admin controls timer locally in PLAYING state
+        if (newRoom.status !== 'PLAYING' || !isAdmin) {
              setTimer(newRoom.timer);
         }
         setScores(newRoom.scores || {});
@@ -158,7 +214,10 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
             setCountdown(localCount);
             if (localCount <= 0) {
                 clearInterval(timerRef.current);
+                // Trigger PLAYING
                 supabase.from('game_rooms').update({ status: 'PLAYING', timer: maxTime }).eq('room_code', roomCode).then();
+                // 🟢 Force local update immediately
+                setStatus('PLAYING');
             }
         }, 1000);
     } else if (status === 'PLAYING') {
@@ -169,11 +228,6 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
             currentTimer--;
             setTimer(currentTimer); // Update local for admin UI
             
-            // Sync to DB only at key moments (e.g. every 5s or end) to save bandwidth
-            if (currentTimer % 5 === 0) {
-                 // Optional: Sync timer to DB for late joiners
-            }
-
             if (currentTimer < 0) {
                 clearInterval(timerRef.current);
                 if (currentQuestionIndex < questions.length - 1) {
@@ -182,8 +236,14 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
                         timer: maxTime,
                         status: 'PLAYING' // Refresh status to trigger clients
                     }).eq('room_code', roomCode).then();
+                    
+                    // 🟢 Force local update immediately for loop to restart
+                    setCurrentQuestionIndex(prev => prev + 1);
+                    setTimer(maxTime);
                 } else {
                     supabase.from('game_rooms').update({ status: 'FINISHED', timer: 0 }).eq('room_code', roomCode).then();
+                    // 🟢 Force local update immediately
+                    setStatus('FINISHED');
                 }
             }
         }, 1000);
@@ -213,22 +273,34 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
 
   const handleStartGame = async () => {
     if (!roomCode) return;
-    await supabase.from('game_rooms').update({ 
+    
+    const { error } = await supabase.from('game_rooms').update({ 
         status: 'COUNTDOWN',
         scores: {} 
     }).eq('room_code', roomCode);
+
+    if (!error) {
+        // 🟢 FIX: Update local status immediately so the useEffect loop starts even if DB update callback lags
+        setStatus('COUNTDOWN');
+    } else {
+        alert("Error starting game: " + error.message);
+    }
   };
 
   const handleReset = async () => {
     if (!roomCode) return;
-    await supabase.from('game_rooms').update({ 
+    const { error } = await supabase.from('game_rooms').update({ 
         status: 'LOBBY', 
         current_question_index: 0, 
         timer: 0,
         scores: {}
     }).eq('room_code', roomCode);
     
-    setCorrectCount(0);
+    if (!error) {
+        setStatus('LOBBY'); // 🟢 FIX
+        setCurrentQuestionIndex(0);
+        setCorrectCount(0);
+    }
   };
 
   const normalizeId = (id: string | number) => String(id).trim().toLowerCase().replace('.', '');
@@ -239,6 +311,8 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
     setSelectedChoice(choiceId); 
 
     const currentQ = questions[currentQuestionIndex];
+    if (!currentQ) return;
+
     const normChoice = normalizeId(choiceId);
     const normCorrect = normalizeId(currentQ.correctChoiceId);
     
@@ -291,29 +365,60 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
 
   // ---------- RENDERING (UI) ----------
 
+  // 1. Waiting / Join Screen (Always visible if not connected/lobby)
   if (status === 'WAITING' && !isAdmin) {
       return (
-          <div className="flex flex-col items-center justify-center min-h-[80vh] px-4 animate-fade-in">
-              <div className="bg-white p-8 rounded-[40px] shadow-xl border-4 border-blue-100 w-full max-w-md text-center relative overflow-hidden">
-                  <div className="bg-blue-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 text-blue-500">
-                      <Gamepad2 size={40} />
+          <div className="flex flex-col items-center justify-center min-h-[80vh] px-4 animate-fade-in pb-safe">
+              <div className="bg-white p-6 rounded-[32px] shadow-2xl border-4 border-blue-100 w-full max-w-sm text-center relative overflow-hidden">
+                  
+                  {/* Decorative Header */}
+                  <div className="absolute -top-10 left-1/2 transform -translate-x-1/2">
+                      <div className="bg-blue-600 text-white p-4 rounded-full shadow-lg border-4 border-white">
+                          <Gamepad2 size={32} />
+                      </div>
                   </div>
-                  <h2 className="text-2xl font-black text-gray-800 mb-2 font-fun">ใส่รหัสห้องสอบ</h2>
-                  <p className="text-gray-500 mb-6">ขอรหัส 6 หลักจากคุณครู</p>
+
+                  <div className="mt-8 mb-4">
+                      <h2 className="text-2xl font-black text-gray-800 font-fun">ใส่รหัสเข้าเกม</h2>
+                      <p className="text-gray-400 text-xs">ขอรหัส 6 หลักจากคุณครู</p>
+                  </div>
+                  
+                  {/* Code Display - High visibility */}
+                  <div className="bg-gray-100 rounded-2xl py-4 px-2 mb-6 border-2 border-gray-200 flex justify-center items-center h-20 shadow-inner">
+                      <span className={`font-mono text-4xl font-bold tracking-[0.3em] ${inputCode ? 'text-blue-600' : 'text-gray-300'}`}>
+                          {inputCode.padEnd(6, '•')}
+                      </span>
+                  </div>
+
+                  {/* Keypad */}
+                  <div className="grid grid-cols-3 gap-3 mb-6 px-2">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
+                        <button key={num} onClick={() => handleNumberClick(num.toString())} className="bg-white border-b-4 border-gray-200 text-blue-600 active:border-b-0 active:translate-y-1 rounded-xl p-3 text-2xl font-bold hover:bg-blue-50 transition-all font-fun shadow-sm">
+                        {num}
+                        </button>
+                    ))}
+                    <div className="col-span-1"></div>
+                    <button onClick={() => handleNumberClick('0')} className="bg-white border-b-4 border-gray-200 text-blue-600 active:border-b-0 active:translate-y-1 rounded-xl p-3 text-2xl font-bold hover:bg-blue-50 transition-all font-fun shadow-sm">0</button>
+                    <button onClick={handleBackspace} className="bg-red-50 border-b-4 border-red-200 text-red-500 active:border-b-0 active:translate-y-1 rounded-xl p-3 text-xl font-bold hover:bg-red-100 transition-all shadow-sm flex items-center justify-center"><Delete size={28}/></button>
+                  </div>
+
+                  {joinError && <p className="text-red-500 mb-4 font-bold text-sm bg-red-50 p-2 rounded-lg animate-pulse">{joinError}</p>}
                   
                   <button 
                       onClick={handleJoinRoom}
-                      className="w-full bg-blue-600 text-white text-xl font-bold py-4 rounded-2xl shadow-lg hover:scale-105 transition-transform"
+                      disabled={isJoining || inputCode.length < 1}
+                      className={`w-full text-white text-xl font-bold py-3 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-all ${isJoining || inputCode.length < 1 ? 'bg-gray-300 cursor-not-allowed' : 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:scale-[1.02] hover:shadow-blue-200'}`}
                   >
-                      กรอกรหัสเข้าร่วม
+                      {isJoining ? <Loader2 className="animate-spin" /> : 'เข้าร่วมเลย!'}
                   </button>
-                  <button onClick={onExit} className="mt-4 text-gray-400 text-sm hover:text-red-500 font-bold px-4 py-2 rounded-lg">กลับหน้าหลัก</button>
-                  {joinError && <p className="text-red-500 mt-4 font-bold">{joinError}</p>}
+                  
+                  <button onClick={onExit} className="mt-4 text-gray-400 text-sm hover:text-red-500 font-bold px-4 py-2 rounded-lg w-full transition-colors">ยกเลิก / กลับหน้าหลัก</button>
               </div>
           </div>
       );
   }
 
+  // 2. Audio Enable Screen
   if (!audioEnabled) {
     return (
         <div className="fixed inset-0 bg-gradient-to-br from-indigo-900 to-purple-900 z-[999] flex flex-col items-center justify-center p-6 text-white text-center">
@@ -330,7 +435,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
     );
   }
 
-  // Reuse same UI structure as before, just updated logic
+  // 3. Lobby Screen
   if (status === 'LOBBY') {
     return (
       <div className="text-center py-10 min-h-[70vh] flex flex-col justify-center relative bg-gradient-to-b from-blue-50 to-white rounded-3xl border-4 border-blue-100 animate-fade-in">
@@ -360,15 +465,19 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
         
         {isAdmin ? <button onClick={handleStartGame} className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-12 py-5 rounded-3xl text-2xl font-black shadow-xl hover:scale-105 transition mx-auto flex gap-3 border-b-8 border-emerald-700 active:border-b-0 active:translate-y-2"><Play fill="currentColor"/> เริ่มเกมเลย!</button> : <div className="animate-pulse text-white font-bold bg-blue-400 inline-block px-8 py-3 rounded-full shadow-lg shadow-blue-200">รอคุณครูกดเริ่มเกม...</div>}
         
-        <button onClick={onExit} className="text-gray-400 text-sm mt-8 hover:text-red-500 font-bold bg-gray-100 px-4 py-2 rounded-lg transition">ออกจากห้อง</button>
+        <button onClick={handleBackToJoin} className="text-gray-400 text-sm mt-8 hover:text-red-500 font-bold bg-gray-100 px-4 py-2 rounded-lg transition flex items-center gap-2 mx-auto">
+            <LogOut size={16}/> ออกจากห้อง
+        </button>
       </div>
     );
   }
 
+  // 4. Countdown Screen
   if (status === 'COUNTDOWN') {
     return <div className="h-[70vh] flex flex-col items-center justify-center bg-white rounded-3xl"><div className="text-2xl font-bold text-gray-400 mb-4 font-fun">เตรียมตัว...</div><div className="text-[12rem] font-black text-transparent bg-clip-text bg-gradient-to-b from-blue-400 to-purple-500 animate-ping drop-shadow-2xl">{countdown}</div></div>;
   }
 
+  // 5. Playing Screen
   if (status === 'PLAYING') {
     const timePercent = (timer / maxTime) * 100;
     const timerColor = timePercent > 50 ? 'bg-green-500' : timePercent > 20 ? 'bg-yellow-500' : 'bg-red-600';
@@ -410,6 +519,25 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
             </div>
         );
     }
+    
+    // Safety check: If in Playing mode but no questions, show loader and try to recover
+    if (!currentQuestion) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6">
+                <Loader2 className="animate-spin text-blue-500 mb-4" size={48} />
+                <h2 className="text-xl font-bold text-gray-800">กำลังโหลดโจทย์...</h2>
+                <p className="text-gray-500 mb-6">หากรอนานเกินไป กรุณากดโหลดใหม่ หรือออกไปเข้าใหม่</p>
+                <div className="flex gap-4">
+                    <button onClick={() => connectToRoom(roomCode)} className="bg-blue-100 text-blue-700 px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-blue-200 transition">
+                        <RefreshCw size={18}/> โหลดใหม่
+                    </button>
+                    <button onClick={handleBackToJoin} className="bg-red-100 text-red-700 px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-red-200 transition">
+                        <LogOut size={18}/> ออกไปเข้าใหม่
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
       <div className="max-w-4xl mx-auto pt-4 pb-20 relative">
@@ -433,11 +561,11 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
             <div className="lg:col-span-2 space-y-6">
                 <div className="bg-white p-6 md:p-8 rounded-[40px] shadow-xl border-b-8 border-blue-50 text-center relative overflow-hidden">
                     {timer <= 0 && <div className="absolute inset-0 bg-black/60 z-20 flex items-center justify-center backdrop-blur-sm"><span className="bg-red-500 text-white px-8 py-4 rounded-full text-3xl font-black shadow-2xl animate-bounce border-4 border-white transform -rotate-3">หมดเวลา!</span></div>}
-                    <h2 className="text-xl md:text-2xl font-bold mb-6 text-gray-800 leading-relaxed font-fun">{currentQuestion?.text}</h2>
-                    {currentQuestion?.image && <img src={currentQuestion.image} className="h-48 mx-auto object-contain mb-6 rounded-2xl border-2 border-gray-100 shadow-sm bg-gray-50"/>}
+                    <h2 className="text-xl md:text-2xl font-bold mb-6 text-gray-800 leading-relaxed font-fun">{currentQuestion.text}</h2>
+                    {currentQuestion.image && <img src={currentQuestion.image} className="h-48 mx-auto object-contain mb-6 rounded-2xl border-2 border-gray-100 shadow-sm bg-gray-50"/>}
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {currentQuestion?.choices.map((c, i) => {
+                        {currentQuestion.choices.map((c, i) => {
                              let btnClass = ['bg-red-50 border-red-200 text-red-800 hover:bg-red-100','bg-blue-50 border-blue-200 text-blue-800 hover:bg-blue-100','bg-yellow-50 border-yellow-200 text-yellow-800 hover:bg-yellow-100','bg-green-50 border-green-200 text-green-800 hover:bg-green-100'][i%4];
                              const isSelected = selectedChoice === c.id;
 
@@ -492,6 +620,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
     );
   }
 
+  // 6. Finished Screen
   if (status === 'FINISHED') {
     return (
         <div className="max-w-4xl mx-auto py-10 animate-fade-in">
@@ -530,7 +659,19 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
     );
   }
 
-  return <div className="flex flex-col items-center justify-center h-64"><Loader2 className="animate-spin text-blue-600 mb-4" size={40}/><p className="text-gray-400 animate-pulse">กำลังค้นหาห้องสอบ...</p></div>;
+  // Fallback Loader (Allows exit)
+  return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
+          <Loader2 className="animate-spin text-blue-600" size={48}/>
+          <div className="text-center">
+              <p className="text-xl font-bold text-gray-800 animate-pulse mb-2">กำลังเชื่อมต่อ...</p>
+              <p className="text-gray-500">หากรอนานเกินไป กดปุ่มด้านล่างเพื่อลองใหม่</p>
+          </div>
+          <button onClick={handleBackToJoin} className="bg-gray-200 text-gray-700 px-6 py-3 rounded-2xl font-bold hover:bg-gray-300 transition flex items-center gap-2">
+              <LogOut size={20}/> กลับไปหน้าใส่รหัส
+          </button>
+      </div>
+  );
 };
 
 export default GameMode;
