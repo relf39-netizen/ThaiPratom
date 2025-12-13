@@ -207,15 +207,34 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
   }, []);
 
   // --- FALLBACK POLLING (SAFETY NET) ---
-  // If websocket fails or packet is missed, this ensures students still start the game.
+  // If websocket fails or packet is missed, this ensures students still sync the game state.
   useEffect(() => {
-    if (isAdmin || status !== 'LOBBY' || !roomCode) return;
+    // Only poll if connected and NOT Finished (to catch LOBBY -> COUNTDOWN -> PLAYING transitions)
+    if (isAdmin || status === 'FINISHED' || !roomCode) return;
     
     const interval = setInterval(async () => {
-        const { data } = await supabase.from('game_rooms').select('status').eq('room_code', roomCode).single();
-        // If server says game started, force start on client
-        if (data && data.status !== 'LOBBY') {
-             setStatus(data.status as GameStatus);
+        const { data } = await supabase.from('game_rooms').select('*').eq('room_code', roomCode).single();
+        
+        if (data) {
+            // 1. Recover Status mismatch (e.g. Stuck in LOBBY or COUNTDOWN)
+            if (data.status !== statusRef.current) {
+                 // If switching to PLAYING and we don't have questions locally, force load them
+                 if (data.status === 'PLAYING' && questionsRef.current.length === 0) {
+                     if (data.questions && Array.isArray(data.questions)) {
+                         setQuestions(data.questions);
+                     }
+                 }
+                 setStatus(data.status as GameStatus);
+            }
+            
+            // 2. Sync during PLAYING (in case socket missed current_question_index update)
+            if (data.status === 'PLAYING') {
+                 setCurrentQuestionIndex(prev => {
+                     // Only update if different to avoid jitter
+                     if (prev !== data.current_question_index) return data.current_question_index;
+                     return prev;
+                 });
+            }
         }
     }, 2000); // Check every 2 seconds
 
@@ -289,6 +308,17 @@ const GameMode: React.FC<GameModeProps> = ({ student, initialRoomCode, onExit, o
           return () => clearInterval(interval);
       }
   }, [status, currentQuestionIndex, maxTime, isAdmin]);
+
+  // Client Side Visual Countdown
+  useEffect(() => {
+      if (!isAdmin && status === 'COUNTDOWN') {
+          setCountdown(5);
+          const interval = setInterval(() => {
+              setCountdown(c => c > 0 ? c - 1 : 0);
+          }, 1000);
+          return () => clearInterval(interval);
+      }
+  }, [status, isAdmin]);
 
   // Reset state on question change
   useEffect(() => {
