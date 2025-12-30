@@ -4,10 +4,9 @@ export interface Student {
   name: string;
   school?: string; 
   avatar: string; 
-  stars: number; 
+  stars: number;
   grade?: string; 
-  teacherId?: string; 
-  inventory?: string[]; // รายรายการไอเทมที่แลกแล้ว
+  inventory?: string[]; 
 }
 
 export interface Teacher {
@@ -16,37 +15,34 @@ export interface Teacher {
   password?: string;
   name: string;
   school: string;
-  role?: string; 
-  gradeLevel?: string; 
+  role?: 'SUPER_ADMIN' | 'SCHOOL_ADMIN' | 'TEACHER' | 'ADMIN' | 'admin'; 
 }
 
-// Define Subject constants for backward compatibility
-export const Subject = {
-  MATH: 'คณิตศาสตร์',
-  THAI: 'ภาษาไทย',
-  SCIENCE: 'วิทยาศาสตร์',
-  ENGLISH: 'ภาษาอังกฤษ',
-  SPELLING: 'การสะกดคำ',
-  TONES: 'วรรณยุกต์',
-  CLUSTERS: 'คำควบกล้ำ',
-  ROHAN: 'ร หัน'
-} as const;
-
-// Allow Subject to be one of the constants OR any string (for custom subjects)
-export type Subject = typeof Subject[keyof typeof Subject] | string;
+export enum Subject {
+  MATH = 'คณิตศาสตร์',
+  THAI = 'ภาษาไทย',
+  SCIENCE = 'วิทยาศาสตร์',
+  ENGLISH = 'ภาษาอังกฤษ',
+  RT_READING = 'RT-การอ่านออกเสียง',
+  RT_COMPREHENSION = 'RT-การอ่านรู้เรื่อง',
+  SPELLING = 'การสะกดคำ',
+  TONES = 'วรรณยุกต์',
+  CLUSTERS = 'คำควบกล้ำ',
+  ROHAN = 'ร หัน'
+}
 
 export interface SubjectDef {
-  id: string;
+  id?: string;
   name: string;
-  grade: string; // P1, P2, ...
-  color: string; // code for Tailwind class logic
-  icon: string; // emoji or icon name
   school: string;
+  grade: string; 
+  icon: string;
+  color: string;
 }
 
 export interface Question {
   id: string;
-  subject: string; 
+  subject: Subject | string;
   text: string;
   image?: string;
   choices: {
@@ -59,26 +55,34 @@ export interface Question {
   grade?: string; 
   school?: string; 
   teacherId?: string; 
+  rt_part?: 'MATCHING' | 'SENTENCE' | 'PASSAGE';
+}
+
+export interface RTReadingItem {
+  id: string;
+  text: string;
+  type: 'WORD' | 'SENTENCE' | 'PASSAGE';
+  grade: 'P1';
+  school: string;
+  teacher_id: string;
 }
 
 export interface ExamResult {
   id: string;
   studentId: string;
-  subject: string;
+  subject: Subject | string;
   score: number;
   totalQuestions: number;
   timestamp: number;
-  assignmentId?: string; 
+  assignmentId?: string;
 }
 
 export interface Assignment {
   id: string;
   school: string;
-  subject: string;
-  grade?: string; 
+  subject: Subject | string;
+  grade?: string;
   questionCount: number;
   deadline: string; 
   createdBy: string;
 }
-
-export type GameState = 'LOBBY' | 'COUNTDOWN' | 'QUESTION' | 'LEADERBOARD' | 'FINISHED';
