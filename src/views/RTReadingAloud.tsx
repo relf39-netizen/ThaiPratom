@@ -29,7 +29,7 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, onBack, onUpda
   const [transcript, setTranscript] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [evaluation, setEvaluation] = useState<ReadingEvaluation | null>(null);
-  const [attempts, setAttempts] = useState(0); // นับจำนวนครั้งที่อ่านผิดในข้อนี้
+  const [attempts, setAttempts] = useState(0); 
 
   const recognitionRef = useRef<any>(null);
   const autoNextTimeoutRef = useRef<any>(null);
@@ -135,18 +135,19 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, onBack, onUpda
 
         if (result.isCorrect) {
             playSFX('CORRECT');
-            setAttempts(0); // Reset attempts
+            setAttempts(0); 
             
-            // AI ชมเชย
-            speak(result.encouragement || "เก่งมากจ้ะ อ่านถูกต้องแล้ว!");
+            // 🦉 พี่นกฮูกชมเชยพร้อมเฉลยย้ำคำที่ถูกต้อง
+            const successMsg = `${result.encouragement || "เก่งมากเลยจ้ะ!"} คำนี้อ่านว่า ${currentItem.text} นะจ๊ะ`;
+            speak(successMsg);
             
             // บันทึกคะแนนอัตโนมัติ
             await recordScore();
 
-            // รอ 2.5 วินาทีให้เด็กฟังคำชมจบแล้วไปข้อต่อไปอัตโนมัติ
+            // รอให้นกฮูกพูดจบ (ประมาณ 4 วินาที) แล้วค่อยไปข้อต่อไป
             autoNextTimeoutRef.current = setTimeout(() => {
                 moveToNext();
-            }, 2500);
+            }, 4000);
             
         } else {
             playSFX('WRONG');
@@ -154,7 +155,6 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, onBack, onUpda
             setAttempts(newAttempts);
 
             if (newAttempts < 3) {
-                // ยังไม่ถึง 3 ครั้ง ให้ลองใหม่
                 const retryMsg = "ยังไม่ถูกจ้ะ ลองอ่านใหม่อีกครั้งนะจ๊ะ";
                 speak(retryMsg);
                 setEvaluation({
@@ -171,10 +171,9 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, onBack, onUpda
                     encouragement: "คำอ่านที่ถูกต้องคือ: " + currentItem.text
                 });
 
-                // ไปข้อต่อไปหลังจากเฉลยจบ
                 autoNextTimeoutRef.current = setTimeout(() => {
                     moveToNext();
-                }, 5000);
+                }, 5500);
             }
         }
     } catch (err) {
@@ -206,10 +205,9 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, onBack, onUpda
     setAttempts(0);
     if (currentIndex < items.length - 1) {
       setCurrentIndex(prev => prev + 1);
-      // อ่านคำต่อไปให้ฟังเลยเพื่อนำทาง
+      // นำทางด้วยเสียงเสมอ
       setTimeout(() => {
-        const nextItem = items[currentIndex + 1];
-        if (nextItem) speak(`ข้อต่อไป คำนี้อ่านว่าอะไรจ๊ะ?`);
+        speak(`ข้อต่อไปจ้ะ... คำนี้อ่านว่าอะไรเอ่ย?`);
       }, 500);
     } else {
       setIsFinished(true);
@@ -340,7 +338,6 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, onBack, onUpda
           {/* Controls Area */}
           <div className="space-y-8 max-w-2xl mx-auto">
               
-              {/* Main Interaction: Recording Button */}
               <div className="flex justify-center">
                   <div className="relative">
                     {!isRecording && !isAnalyzing && !evaluation?.isCorrect && (
@@ -372,21 +369,20 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, onBack, onUpda
                         
                         <div className="absolute -bottom-12 left-1/2 transform -translate-x-1/2 whitespace-nowrap">
                             <span className="text-sm font-black text-gray-600 bg-white/80 px-3 py-1 rounded-full border border-gray-100 shadow-sm">
-                                {isRecording ? 'กำลังฟัง...' : isAnalyzing ? 'กำลังตรวจ...' : evaluation?.isCorrect ? 'ถูกต้องแล้วจ้ะ!' : (attempts > 0 ? `ลองใหม่อีกทีจ้ะ (${attempts}/3)` : 'กดแล้วเริ่มอ่านเลยจ้ะ')}
+                                {isRecording ? 'กำลังฟัง...' : isAnalyzing ? 'กำลังตรวจ...' : evaluation?.isCorrect ? 'ถูกต้องแล้วจ้ะ!' : (attempts > 0 ? `ลองใหม่อีกทีจ้ะ (${attempts}/3)` : 'กดปุ่มแล้วเริ่มอ่านเลยจ้ะ')}
                             </span>
                         </div>
                     </button>
                   </div>
               </div>
 
-              {/* Action Buttons */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-16 pt-4 border-t-2 border-dashed border-gray-100">
                   <button 
                     onClick={handleSpeakTarget} 
                     disabled={isRecording || isAnalyzing}
                     className="py-5 bg-white border-4 border-sky-200 text-sky-600 rounded-[32px] font-black text-xl shadow-lg flex items-center justify-center gap-2 hover:bg-sky-50 transition active:scale-95 disabled:opacity-50"
                   >
-                    <Volume2 size={28}/> ฟังพี่นกฮูกเฉลย
+                    <Volume2 size={28}/> ฟังเสียงพี่นกฮูก
                   </button>
                   
                   <button 
