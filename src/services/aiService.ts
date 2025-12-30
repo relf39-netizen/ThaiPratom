@@ -18,10 +18,81 @@ export interface GeneratedRTReading {
     type: 'WORD' | 'SENTENCE' | 'PASSAGE';
 }
 
+export interface ReadingEvaluation {
+    isCorrect: boolean;
+    feedback: string;
+    encouragement: string;
+    phoneticHelp?: string;
+}
+
 const generateImageUrl = (description: string): string => {
   if (!description || description.toLowerCase() === 'none') return '';
   const style = "clean cute cartoon style, high quality illustration for kids, simple white background, educational";
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(description + ', ' + style)}?width=512&height=512&nologo=true`;
+};
+
+/**
+ * 🟢 AI วิเคราะห์การอ่านออกเสียง
+ */
+export const evaluateReading = async (
+    targetText: string,
+    transcriptText: string,
+    apiKey: string
+): Promise<ReadingEvaluation> => {
+    const ai = new GoogleGenAI({ apiKey });
+    const model = "gemini-3-flash-preview";
+
+    const prompt = `
+        คุณคือ "พี่นกฮูก" ครูสอนภาษาไทยใจดีสำหรับเด็ก ป.1
+        นักเรียนกำลังฝึกอ่านคำว่า: "${targetText}"
+        ระบบบันทึกเสียงแปลงเสียงเด็กได้เป็นคำว่า: "${transcriptText}"
+
+        หน้าที่ของคุณ:
+        1. วิเคราะห์ว่าเด็กอ่านถูกต้องหรือไม่ (ให้ยอมรับความคลาดเคลื่อนของไมโครโฟนได้บ้าง เช่น ถ้าคำใกล้เคียงกันมากให้ถือว่าถูก)
+        2. หากผิด: อธิบายสั้นๆ ว่าต้องออกเสียงอย่างไร (phoneticHelp) เช่น "ต้องออกเสียงควบกล้ำ ร เรือ ให้ชัดนะจ๊ะ"
+        3. ให้คำแนะนำและคำชม (encouragement) ที่ทำให้เด็กอยากฝึกต่อ
+        4. ใช้ภาษาที่น่ารัก เป็นกันเอง เหมือนพี่คุยกับน้อง
+
+        คืนค่าเป็น JSON ตามโครงสร้างนี้เท่านั้น:
+        {
+            "isCorrect": boolean,
+            "feedback": "คำอธิบายว่าทำไมถึงถูกหรือผิด",
+            "encouragement": "คำชมหรือการให้กำลังใจ",
+            "phoneticHelp": "วิธีออกเสียงที่ถูกต้อง (ถ้าผิด)"
+        }
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model,
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        isCorrect: { type: Type.BOOLEAN },
+                        feedback: { type: Type.STRING },
+                        encouragement: { type: Type.STRING },
+                        phoneticHelp: { type: Type.STRING }
+                    },
+                    required: ["isCorrect", "feedback", "encouragement"]
+                }
+            }
+        });
+
+        if (response.text) {
+            return JSON.parse(response.text);
+        }
+        throw new Error("No response from AI");
+    } catch (e) {
+        console.error("AI Evaluation Error:", e);
+        return {
+            isCorrect: targetText.trim() === transcriptText.trim(),
+            feedback: "พี่นกฮูกกำลังตั้งใจฟังอยู่จ้ะ",
+            encouragement: "เก่งมากเลยที่พยายามจ้ะ!"
+        };
+    }
 };
 
 /**

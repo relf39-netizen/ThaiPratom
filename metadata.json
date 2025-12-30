@@ -1,5 +1,8 @@
+
 {
-    "requestFramePermissions": [],
-    "name": "Thai for children",
-    "description": "แบบฝึกหัดภาษาไทยสำหรับเด็ก"
-  }
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "name": "Supabase of Thai for children",
+  "description": "แบบฝึกหัดภาษาไทยสำหรับเด็ก"
+}
