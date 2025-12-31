@@ -6,7 +6,7 @@ const SOUNDS = {
   // เพลง Lobby: จังหวะสนุกๆ รอเพื่อน
   BGM_LOBBY: 'https://cdn.pixabay.com/audio/2022/03/15/audio_c8c8a73467.mp3',
   
-  // เพลง Game: จังหวะตื่นเต้น เร้าใจ (เปลี่ยนลิงก์ใหม่ให้โหลดง่ายขึ้น)
+  // เพลง Game: จังหวะตื่นเต้น เร้าใจ
   BGM_GAME: 'https://cdn.pixabay.com/audio/2021/09/06/audio_3719979729.mp3', 
   
   // เพลง Victory: ชัยชนะ
@@ -21,25 +21,36 @@ const SOUNDS = {
 let bgmAudio: HTMLAudioElement | null = null;
 let isMuted = false;
 
-// ปรับปรุงฟังก์ชัน speak ให้รองรับการต่อคิว (interrupt = false)
-export const speak = (text: string, interrupt: boolean = true) => {
-if (isMuted) return;
+// ปรับปรุงฟังก์ชัน speak ให้รองรับ callback เมื่อพูดจบ
+export const speak = (text: string, interrupt: boolean = true, onEnd?: () => void) => {
+if (isMuted) {
+    if (onEnd) onEnd();
+    return;
+}
 if ('speechSynthesis' in window) {
   if (interrupt) {
       window.speechSynthesis.cancel(); // หยุดพูดอันเก่าทันที
   }
   
-  // ลบตัวอักษรพิเศษที่อาจทำให้อ่านผิด
   const cleanText = text.replace(/_/g, ' ').replace(/-/g, ' ');
-  
   const utterance = new SpeechSynthesisUtterance(cleanText);
   utterance.lang = 'th-TH';
-  utterance.rate = 0.9; // พูดช้าลงนิดหน่อยให้เด็กฟังทัน
+  utterance.rate = 1.0; 
+
+  if (onEnd) {
+      utterance.onend = () => {
+          onEnd();
+      };
+  }
+  
   window.speechSynthesis.speak(utterance);
+} else {
+    // Fallback if not supported
+    if (onEnd) onEnd();
 }
 };
 
-// ฟังก์ชันหยุดพูด (ใช้เมื่อเปลี่ยนหน้า หรือกดตอบ)
+// ฟังก์ชันหยุดพูด
 export const stopSpeaking = () => {
   if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
@@ -49,12 +60,11 @@ export const stopSpeaking = () => {
 export const playBGM = (type: 'LOBBY' | 'GAME' | 'VICTORY') => {
   if (isMuted) return;
   
-  // ถ้าเป็นเพลงเดิมและเล่นอยู่แล้ว ไม่ต้องโหลดใหม่
   if (bgmAudio && !bgmAudio.paused && bgmAudio.src.includes(type === 'GAME' ? 'audio_3719979729' : 'audio_c8c8a73467')) {
       return;
   }
 
-  stopBGM(); // หยุดเพลงเก่า
+  stopBGM();
 
   let src = '';
   switch (type) {
@@ -66,12 +76,12 @@ export const playBGM = (type: 'LOBBY' | 'GAME' | 'VICTORY') => {
   if (src) {
       bgmAudio = new Audio(src);
       bgmAudio.loop = true;
-      bgmAudio.volume = 0.5; // เพิ่มความดังเป็น 50%
+      bgmAudio.volume = 0.5;
       const playPromise = bgmAudio.play();
       
       if (playPromise !== undefined) {
           playPromise.catch(error => {
-              console.log("Auto-play prevented. Waiting for user interaction.", error);
+              console.log("Auto-play prevented", error);
           });
       }
   }
@@ -107,7 +117,7 @@ export const toggleMuteSystem = (muteState: boolean) => {
   isMuted = muteState;
   if (isMuted) {
       if (bgmAudio) bgmAudio.pause();
-      stopSpeaking(); // หยุดพูดด้วยถ้าปิดเสียง
+      stopSpeaking(); 
   } else {
       if (bgmAudio) bgmAudio.play().catch(() => {});
   }

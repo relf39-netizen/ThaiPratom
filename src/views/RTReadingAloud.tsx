@@ -46,6 +46,17 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
     attemptsRef.current = attempts;
   }, [currentIndex, items, attempts]);
 
+  // ฟังก์ชันเริ่มอัดเสียงแบบปลอดภัย (ตรวจสอบสถานะ)
+  const safeStartRecording = () => {
+    if (recognitionRef.current && !isRecording && !isAnalyzing && !isFinished) {
+        try {
+            recognitionRef.current.start();
+        } catch (e) {
+            console.warn("Recognition already started or error:", e);
+        }
+    }
+  };
+
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
@@ -69,8 +80,9 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
 
       recognition.onerror = (event: any) => {
         setIsRecording(false);
+        // ถ้าไม่พูดอะไรเลย ให้พี่นกฮูกทักทายใหม่
         if (event.error === 'no-speech') {
-            speak("พี่นกฮูกไม่ได้ยินเสียงหนูเลยจ้ะ ลองกดปุ่มไมค์แล้วพูดใหม่อีกทีนะจ๊ะ");
+            console.log("No speech detected");
         }
       };
 
@@ -84,7 +96,7 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
     };
   }, []);
 
-  // 📊 คำนวณคะแนนเฉลี่ยแยก 3 หมวด
+  // 📊 คำนวณคะแนนเฉลี่ย
   const getAverageByType = (typeLabel: string) => {
     const filtered = examResults.filter(r => r.studentId === student.id && r.subject === typeLabel);
     if (filtered.length === 0) return 0;
@@ -116,9 +128,12 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
         setIsFinished(false);
         setShowModeSelection(false);
         
-        setTimeout(() => {
-            speak(`เริ่มฝึกอ่านหมวด ${type === 'WORD' ? 'คำศัพท์' : type === 'SENTENCE' ? 'ประโยค' : 'ข้อความ'} จ้ะ ตั้งใจฟังและอ่านตามพี่นกฮูกนะจ๊ะ`);
-        }, 500);
+        // พี่นกฮูกเกริ่นนำ แล้วเปิดไมค์อัตโนมัติ
+        const introText = `เริ่มฝึกอ่านหมวด ${type === 'WORD' ? 'คำศัพท์' : type === 'SENTENCE' ? 'ประโยค' : 'ข้อความ'} จ้ะ ตั้งใจฟังและอ่านตามพี่นกฮูกนะจ๊ะ ... คำนี้อ่านว่าอะไรเอ่ย?`;
+        speak(introText, true, () => {
+            safeStartRecording();
+        });
+
     } catch (e) {
         speak("เกิดข้อผิดพลาดจ้ะ ลองใหม่อีกครั้งนะ");
     } finally {
@@ -128,11 +143,7 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
 
   const handleStartRecording = () => {
     stopSpeaking();
-    if (recognitionRef.current && !isRecording && !isAnalyzing) {
-        try {
-            recognitionRef.current.start();
-        } catch (e) { console.warn(e); }
-    }
+    safeStartRecording();
   };
 
   const handleAnalyzeReading = async (text: string, currentItem: RTReadingItem) => {
@@ -149,14 +160,15 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
             setSessionCorrectCount(prev => prev + 1);
             
             const successMsg = `เก่งมากเลยจ้ะ! คำนี้อ่านว่า ${currentItem.text} นะจ๊ะ หนูเก่งที่สุดเลย`;
-            speak(successMsg);
+            speak(successMsg, true, () => {
+                // รอสักพักแล้วไปข้อต่อไป
+                autoNextTimeoutRef.current = setTimeout(() => {
+                    moveToNext();
+                }, 1000);
+            });
             
             await saveRTResult(student.id, currentItem.id, 1);
             onUpdateStars(student.stars + 1);
-
-            autoNextTimeoutRef.current = setTimeout(() => {
-                moveToNext();
-            }, 7000);
             
         } else {
             playSFX('WRONG');
@@ -164,35 +176,45 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
             setAttempts(newAttempts);
 
             if (newAttempts < 3) {
-                speak("ยังไม่ถูกจ้ะ ลองอ่านใหม่อีกครั้งนะจ๊ะ");
+                speak("ยังไม่ถูกจ้ะ ลองอ่านใหม่อีกครั้งนะจ๊ะ", true, () => {
+                    // เปิดไมค์ให้อ่านใหม่อัตโนมัติ
+                    safeStartRecording();
+                });
                 setEvaluation({ ...result, encouragement: `ลองใหม่อีกครั้งนะ (ครั้งที่ ${newAttempts}/3)` });
             } else {
                 const solvedMsg = `ยังไม่ถูกจ้ะ แต่ไม่เป็นไรนะ คำอ่านที่ถูกต้องคือ ${currentItem.text} จ้ะ ลองดูข้อต่อไปนะจ๊ะ`;
-                speak(solvedMsg);
+                speak(solvedMsg, true, () => {
+                    autoNextTimeoutRef.current = setTimeout(() => {
+                        moveToNext();
+                    }, 1000);
+                });
                 setEvaluation({ ...result, encouragement: "เฉลย: " + currentItem.text });
-
-                autoNextTimeoutRef.current = setTimeout(() => {
-                    moveToNext();
-                }, 7500);
             }
         }
     } catch (err) {
-        speak("พี่นกฮูกขอโทษจ้ะ ตรวจสอบไม่ได้ ลองใหม่อีกทีนะ");
+        speak("พี่นกฮูกขอโทษจ้ะ ตรวจสอบไม่ได้ ลองอ่านใหม่อีกทีนะ", true, () => safeStartRecording());
     } finally {
         setIsAnalyzing(false);
     }
   };
 
   const moveToNext = () => {
+    if (isFinished) return;
+    
     setEvaluation(null);
     setTranscript('');
     setAttempts(0);
     
     if (currentIndexRef.current < itemsRef.current.length - 1) {
-      setCurrentIndex(prev => prev + 1);
+      const nextIdx = currentIndexRef.current + 1;
+      setCurrentIndex(nextIdx);
+      
+      // พี่นกฮูกบอกข้อต่อไป แล้วเปิดไมค์อัตโนมัติ
       setTimeout(() => {
-        speak(`ข้อต่อไปจ้ะ... คำนี้อ่านว่าอะไรเอ่ย?`);
-      }, 1000);
+          speak(`ข้อต่อไปจ้ะ... คำนี้อ่านว่าอะไรเอ่ย?`, true, () => {
+              safeStartRecording();
+          });
+      }, 500);
     } else {
       handleFinishSession();
     }
@@ -202,7 +224,6 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
     setIsSaving(true);
     setIsFinished(true);
     
-    // บันทึกแยกหมวดหมู่เพื่อใช้แสดงค่าเฉลี่ยรายปุ่ม
     const categoryName = currentType === 'WORD' ? 'RT-อ่านเป็นคำ' : currentType === 'SENTENCE' ? 'RT-อ่านประโยค' : 'RT-อ่านข้อความ';
     
     await saveScore(
@@ -219,7 +240,14 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
   };
 
   const handleSpeakTarget = () => {
-    if (items[currentIndex]) speak("ฟังพี่นกฮูกนะจ๊ะ... " + items[currentIndex].text);
+    if (items[currentIndex]) {
+        speak("ฟังพี่นกฮูกนะจ๊ะ... " + items[currentIndex].text, true, () => {
+            // ฟังเสร็จแล้วให้เด็กอ่านตาม
+            speak("ทีนี้ตาหนูแล้วจ้ะ อ่านว่าอะไรเอ่ย?", false, () => {
+                safeStartRecording();
+            });
+        });
+    }
   };
 
   if (showModeSelection) {
@@ -235,7 +263,6 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 px-4">
-                  {/* โหมดอ่านเป็นคำ */}
                   <div className="flex flex-col gap-3">
                       <button onClick={() => fetchItems('WORD')} className="group p-10 bg-orange-50 rounded-[40px] border-4 border-orange-200 font-black text-2xl hover:scale-105 hover:bg-orange-100 transition shadow-lg text-orange-700 flex flex-col items-center gap-3">
                           <span className="text-5xl group-hover:rotate-12 transition-transform">📝</span>
@@ -247,7 +274,6 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
                       </div>
                   </div>
 
-                  {/* โหมดอ่านประโยค */}
                   <div className="flex flex-col gap-3">
                       <button onClick={() => fetchItems('SENTENCE')} className="group p-10 bg-sky-50 rounded-[40px] border-4 border-sky-200 font-black text-2xl hover:scale-105 hover:bg-sky-100 transition shadow-lg text-sky-700 flex flex-col items-center gap-3">
                           <span className="text-5xl group-hover:rotate-12 transition-transform">💬</span>
@@ -259,7 +285,6 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
                       </div>
                   </div>
 
-                  {/* โหมดอ่านข้อความ */}
                   <div className="flex flex-col gap-3">
                       <button onClick={() => fetchItems('PASSAGE')} className="group p-10 bg-emerald-50 rounded-[40px] border-4 border-emerald-200 font-black text-2xl hover:scale-105 hover:bg-emerald-100 transition shadow-lg text-emerald-700 flex flex-col items-center gap-3">
                           <span className="text-5xl group-hover:rotate-12 transition-transform">📖</span>
