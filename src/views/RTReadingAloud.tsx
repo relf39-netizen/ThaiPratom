@@ -80,7 +80,6 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
 
       recognition.onerror = (event: any) => {
         setIsRecording(false);
-        // ถ้าไม่พูดอะไรเลย ให้พี่นกฮูกทักทายใหม่
         if (event.error === 'no-speech') {
             console.log("No speech detected");
         }
@@ -96,12 +95,29 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
     };
   }, []);
 
-  // 📊 คำนวณคะแนนเฉลี่ย
+  // 📊 ฟังก์ชันคำนวณคะแนนเฉลี่ยแบบปลอดภัย (ป้องกัน NaN)
   const getAverageByType = (typeLabel: string) => {
-    const filtered = examResults.filter(r => r.studentId === student.id && r.subject === typeLabel);
+    const filtered = examResults.filter(r => 
+        r.studentId === student.id && 
+        String(r.subject).trim() === typeLabel
+    );
+    
     if (filtered.length === 0) return 0;
-    const totalPercent = filtered.reduce((sum, r) => sum + ((r.score / r.totalQuestions) * 100), 0);
-    return Math.round(totalPercent / filtered.length);
+    
+    let totalScoreSum = 0;
+    let count = 0;
+
+    filtered.forEach(r => {
+        const s = Number(r.score) || 0;
+        const t = Number(r.totalQuestions) || 0;
+        if (t > 0) {
+            totalScoreSum += (s / t) * 100;
+            count++;
+        }
+    });
+
+    if (count === 0) return 0;
+    return Math.round(totalScoreSum / count);
   };
 
   const wordAvg = useMemo(() => getAverageByType('RT-อ่านเป็นคำ'), [examResults, student.id]);
@@ -128,7 +144,6 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
         setIsFinished(false);
         setShowModeSelection(false);
         
-        // พี่นกฮูกเกริ่นนำ แล้วเปิดไมค์อัตโนมัติ
         const introText = `เริ่มฝึกอ่านหมวด ${type === 'WORD' ? 'คำศัพท์' : type === 'SENTENCE' ? 'ประโยค' : 'ข้อความ'} จ้ะ ตั้งใจฟังและอ่านตามพี่นกฮูกนะจ๊ะ ... คำนี้อ่านว่าอะไรเอ่ย?`;
         speak(introText, true, () => {
             safeStartRecording();
@@ -161,7 +176,6 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
             
             const successMsg = `เก่งมากเลยจ้ะ! คำนี้อ่านว่า ${currentItem.text} นะจ๊ะ หนูเก่งที่สุดเลย`;
             speak(successMsg, true, () => {
-                // รอสักพักแล้วไปข้อต่อไป
                 autoNextTimeoutRef.current = setTimeout(() => {
                     moveToNext();
                 }, 1000);
@@ -177,7 +191,6 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
 
             if (newAttempts < 3) {
                 speak("ยังไม่ถูกจ้ะ ลองอ่านใหม่อีกครั้งนะจ๊ะ", true, () => {
-                    // เปิดไมค์ให้อ่านใหม่อัตโนมัติ
                     safeStartRecording();
                 });
                 setEvaluation({ ...result, encouragement: `ลองใหม่อีกครั้งนะ (ครั้งที่ ${newAttempts}/3)` });
@@ -209,7 +222,6 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
       const nextIdx = currentIndexRef.current + 1;
       setCurrentIndex(nextIdx);
       
-      // พี่นกฮูกบอกข้อต่อไป แล้วเปิดไมค์อัตโนมัติ
       setTimeout(() => {
           speak(`ข้อต่อไปจ้ะ... คำนี้อ่านว่าอะไรเอ่ย?`, true, () => {
               safeStartRecording();
@@ -242,7 +254,6 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
   const handleSpeakTarget = () => {
     if (items[currentIndex]) {
         speak("ฟังพี่นกฮูกนะจ๊ะ... " + items[currentIndex].text, true, () => {
-            // ฟังเสร็จแล้วให้เด็กอ่านตาม
             speak("ทีนี้ตาหนูแล้วจ้ะ อ่านว่าอะไรเอ่ย?", false, () => {
                 safeStartRecording();
             });
@@ -257,7 +268,7 @@ const RTReadingAloud: React.FC<RTReadingAloudProps> = ({ student, examResults, o
                   <ArrowLeft size={20}/> กลับหน้าหลัก
               </button>
               <div className="text-center mb-10">
-                  <div className="text-8xl mb-4 animate-bounce">🦉</div>
+                  <div className="text-8xl mb-4 animate-bounce select-none">🦉</div>
                   <h2 className="text-3xl font-black text-gray-800 font-fun">เลือกโหมดการฝึกอ่านนะจ๊ะ</h2>
                   <p className="text-gray-400 font-bold mt-2">สะสมดาว 1 ดวง ต่อ 1 คำที่อ่านถูกจ้ะ!</p>
               </div>
