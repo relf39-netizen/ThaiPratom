@@ -151,31 +151,51 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const normalizeId = (id: any) => id ? String(id).trim() : '';
   const isAdmin = teacher.username?.toLowerCase() === 'admin' || teacher.role === 'ADMIN' || teacher.role === 'admin';
 
-  // 📊 คำนวณสถิติ RT ภาพรวม
+  // 📊 คำนวณสถิติ RT ภาพรวม (แก้ไขปัญหา NaN%)
   const rtSummary = useMemo(() => {
     return RT_CATEGORIES.map(cat => {
         const catResults = stats.filter(r => r.subject === cat.id);
         if (catResults.length === 0) return { ...cat, avg: 0, count: 0 };
-        const totalPercent = catResults.reduce((sum, r) => sum + ((r.score / r.totalQuestions) * 100), 0);
+        
+        let validSum = 0;
+        let validCount = 0;
+        
+        catResults.forEach(r => {
+            const totalQ = Number(r.totalQuestions) || 0;
+            if (totalQ > 0) {
+                validSum += (Number(r.score) / totalQ) * 100;
+                validCount++;
+            }
+        });
+        
         return { 
             ...cat, 
-            avg: Math.round(totalPercent / catResults.length), 
+            avg: validCount > 0 ? Math.round(validSum / validCount) : 0, 
             count: catResults.length 
         };
     });
   }, [stats]);
 
-  // 📈 คำนวณคะแนน RT รายบุคคล
+  // 📈 คำนวณคะแนน RT รายบุคคล (แก้ไขปัญหาคะแนนไม่ขึ้น)
   const studentRtStats = useMemo(() => {
     return students.filter(s => s.grade === 'P1').map(student => {
-        const studentResults = stats.filter(r => r.studentId === student.id);
+        const studentIdStr = normalizeId(student.id);
+        const studentResults = stats.filter(r => normalizeId(r.studentId) === studentIdStr);
         const scores: Record<string, number> = {};
         
         RT_CATEGORIES.forEach(cat => {
             const results = studentResults.filter(r => r.subject === cat.id);
             if (results.length > 0) {
-                const totalPercent = results.reduce((sum, r) => sum + ((r.score / r.totalQuestions) * 100), 0);
-                scores[cat.id] = Math.round(totalPercent / results.length);
+                let catSum = 0;
+                let catCount = 0;
+                results.forEach(r => {
+                    const tq = Number(r.totalQuestions) || 0;
+                    if (tq > 0) {
+                        catSum += (Number(r.score) / tq) * 100;
+                        catCount++;
+                    }
+                });
+                scores[cat.id] = catCount > 0 ? Math.round(catSum / catCount) : 0;
             } else {
                 scores[cat.id] = 0;
             }
@@ -192,8 +212,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
 
   const filteredStatistics = useMemo(() => {
       const targetStudents = students.filter(s => statsGrade === 'ALL' || (s.grade || 'P2') === statsGrade);
-      const targetStudentIds = new Set(targetStudents.map(s => s.id));
-      const targetResults = stats.filter(r => targetStudentIds.has(r.studentId));
+      const targetStudentIds = new Set(targetStudents.map(s => normalizeId(s.id)));
+      const targetResults = stats.filter(r => targetStudentIds.has(normalizeId(r.studentId)));
       const subjectStats: Record<string, { attempts: number, totalScore: number, totalQuestions: number, name: string }> = {};
       
       targetResults.forEach(result => {
@@ -201,8 +221,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
               subjectStats[result.subject] = { name: result.subject, attempts: 0, totalScore: 0, totalQuestions: 0 };
           }
           subjectStats[result.subject].attempts += 1;
-          subjectStats[result.subject].totalScore += result.score;
-          subjectStats[result.subject].totalQuestions += result.totalQuestions;
+          subjectStats[result.subject].totalScore += Number(result.score) || 0;
+          subjectStats[result.subject].totalQuestions += Number(result.totalQuestions) || 0;
       });
 
       const subjectsData = Object.values(subjectStats).map(s => ({
@@ -227,7 +247,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
           subjectsData,
           mostPopular,
           bestPerformance,
-          activeStudents: new Set(targetResults.map(s => s.studentId)).size,
+          activeStudents: new Set(targetResults.map(s => normalizeId(s.studentId))).size,
           totalStudents: targetStudents.length,
           filteredStudents: targetStudents
       };
@@ -442,6 +462,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       setQText(q.text);
       setQImage(q.image || '');
       setQCorrect(String(q.correctChoiceId));
+      setQCorrect(String(q.correctChoiceId));
       setQExplain(q.explanation);
       
       const choices = { c1: '', c2: '', c3: '', c4: '' };
@@ -573,12 +594,17 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       const currentTid = normalizeId(teacher.id);
       return questions.filter(q => {
           if ((q.grade || 'P2') !== qBankSelectedGrade) return false;
-          if (showMyQuestionsOnly) {
-              if (normalizeId(q.teacherId) !== currentTid) return false;
-          } else {
-              if (q.school !== teacher.school && q.school !== 'CENTER' && q.school !== 'Admin') return false;
-          }
-          if (subjectName && q.subject !== subjectName) return false;
+          
+          // ไม่แสดงข้อสอบ RT ในคลังข้อสอบปกติ
+          if (String(q.subject).includes('RT-') || q.subject === Subject.RT_COMPREHENSION || q.subject === Subject.RT_READING) return false;
+
+          // ตรวจสอบสังกัด (Visibility)
+          const isVisible = q.school === teacher.school || q.school === 'CENTER' || q.school === 'Admin' || normalizeId(q.teacherId) === currentTid;
+          if (!isVisible) return false;
+
+          if (showMyQuestionsOnly && normalizeId(q.teacherId) !== currentTid) return false;
+          
+          if (subjectName && String(q.subject).trim() !== String(subjectName).trim()) return false;
           return true;
       }).length;
   };
@@ -586,23 +612,54 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const filteredQuestions = useMemo(() => {
       const currentTid = normalizeId(teacher.id);
       let filtered = questions;
+      
+      // กรองวิชา RT ออกจากคลังข้อสอบทั่วไป
+      filtered = filtered.filter(q => !String(q.subject).includes('RT-') && q.subject !== Subject.RT_COMPREHENSION && q.subject !== Subject.RT_READING);
+
       if (qBankSelectedGrade) {
           filtered = filtered.filter(q => (q.grade || 'P2') === qBankSelectedGrade);
       }
+      
+      // กรองตามสิทธิ์การมองเห็น
+      filtered = filtered.filter(q => 
+          q.school === teacher.school || 
+          q.school === 'CENTER' || 
+          q.school === 'Admin' || 
+          normalizeId(q.teacherId) === currentTid
+      );
+
       if (showMyQuestionsOnly) {
           filtered = filtered.filter(q => normalizeId(q.teacherId) === currentTid);
-      } else {
-          filtered = filtered.filter(q => q.school === teacher.school || q.school === 'CENTER' || q.school === 'Admin');
       }
+
       if (qBankSubject) {
-          filtered = filtered.filter(q => q.subject === qBankSubject);
+          filtered = filtered.filter(q => String(q.subject).trim() === String(qBankSubject).trim());
       }
       return filtered;
-  }, [questions, qBankSelectedGrade, showMyQuestionsOnly, qBankSubject, teacher.school]);
+  }, [questions, qBankSelectedGrade, showMyQuestionsOnly, qBankSubject, teacher.school, teacher.id]);
+
+  // ดึงวิชาทั้งหมดที่มีในคลังข้อสอบจริงๆ สำหรับระดับชั้นที่เลือก (ไม่เอา RT)
+  const availableSubjectNames = useMemo(() => {
+      if (!qBankSelectedGrade) return [];
+      const currentTid = normalizeId(teacher.id);
+      const subjectsInPool = questions
+        .filter(q => (q.grade || 'P2') === qBankSelectedGrade)
+        .filter(q => !String(q.subject).includes('RT-') && q.subject !== Subject.RT_COMPREHENSION && q.subject !== Subject.RT_READING)
+        .filter(q => q.school === teacher.school || q.school === 'CENTER' || q.school === 'Admin' || normalizeId(q.teacherId) === currentTid)
+        .map(q => String(q.subject).trim());
+      
+      // รวมกับวิชาที่ครูตั้งค่าไว้ (กรอง RT ออก)
+      const definedSubjects = schoolSubjects
+        .filter(s => s.grade === qBankSelectedGrade)
+        .filter(s => !String(s.name).includes('RT-'))
+        .map(s => s.name.trim());
+      
+      return Array.from(new Set([...subjectsInPool, ...definedSubjects])).sort();
+  }, [questions, qBankSelectedGrade, schoolSubjects, teacher.school, teacher.id]);
 
   const filteredRTQuestions = useMemo(() => {
     return questions.filter(q => 
-        q.subject === Subject.RT_COMPREHENSION && 
+        (q.subject === Subject.RT_COMPREHENSION || q.subject === 'RT-การอ่านรู้เรื่อง') && 
         (q.rt_part === rtCompPart || (!q.rt_part && rtCompPart === 'MATCHING'))
     );
   }, [questions, rtCompPart]);
@@ -614,17 +671,20 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   };
 
   const getStudentActivity = (studentId: string) => {
-      const studentResults = stats.filter(r => String(r.studentId) === String(studentId));
-      return { totalExams: studentResults.length, lastExam: studentResults.length > 0 ? Math.max(...studentResults.map(r => r.timestamp)) : null };
+      const studentIdStr = normalizeId(studentId);
+      const studentResults = stats.filter(r => normalizeId(r.studentId) === studentIdStr);
+      return { totalExams: studentResults.length, lastExam: studentResults.length > 0 ? Math.max(...studentResults.map(r => new Date(r.timestamp).getTime())) : null };
   };
 
   const getStudentSubjectStats = (studentId: string) => {
-      const studentResults = stats.filter(r => String(r.studentId) === String(studentId));
+      const studentIdStr = normalizeId(studentId);
+      const studentResults = stats.filter(r => normalizeId(r.studentId) === studentIdStr);
       const subjMap: Record<string, { totalScore: number, count: number }> = {};
       
       studentResults.forEach(r => {
           if (!subjMap[r.subject]) subjMap[r.subject] = { totalScore: 0, count: 0 };
-          subjMap[r.subject].totalScore += (r.score / r.totalQuestions) * 100;
+          const tq = Number(r.totalQuestions) || 1;
+          subjMap[r.subject].totalScore += (Number(r.score) / tq) * 100;
           subjMap[r.subject].count++;
       });
 
@@ -721,8 +781,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                         </thead>
                                         <tbody className="divide-y divide-gray-50">
                                             {studentRtStats.map(s => {
-                                                const scores = Object.values(s.scores);
-                                                const playedScores = scores.filter(v => v > 0);
+                                                const scoresValues = Object.values(s.scores);
+                                                const playedScores = scoresValues.filter(v => v > 0);
                                                 const overall = playedScores.length > 0 ? Math.round(playedScores.reduce((a,b)=>a+b,0) / playedScores.length) : 0;
                                                 
                                                 return (
@@ -965,7 +1025,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                                 <button 
                                                     key={g.value} 
                                                     onClick={() => setViewingSubjectGrade(g.value)}
-                                                    className={`p-5 rounded-2xl border-2 hover:shadow-lg transition-all flex flex-col items-center justify-center gap-2 bg-white ${g.color} group`}
+                                                    className={`p-5 rounded-2xl border-2 hover:shadow-lg transition-all flex flex-col items-center justify-center gap-2 bg-white ${g.color} bg-white group`}
                                                 >
                                                     <span className="text-3xl font-black group-hover:scale-110 transition-transform">{g.label}</span>
                                                     <span className="text-xs font-bold bg-white/50 px-2 py-0.5 rounded border border-black/5">{count} วิชา</span>
@@ -1141,7 +1201,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                   {!qBankSelectedGrade ? (
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
                           {GRADE_OPTIONS.map(g => {
-                             const qCount = questions.filter(q => (q.grade || 'P2') === g.value && (q.school === teacher.school || q.school === 'CENTER')).length;
+                             const qCount = questions.filter(q => (q.grade || 'P2') === g.value && (q.school === teacher.school || q.school === 'CENTER') && !String(q.subject).includes('RT-') && q.subject !== Subject.RT_COMPREHENSION).length;
                              return (
                                 <button key={g.value} onClick={() => { setQBankSelectedGrade(g.value); setQGrade(g.value); setQBankSubject(null); setShowManualQForm(false); }} className={`p-8 rounded-3xl border-2 hover:shadow-xl transition-all flex flex-col items-center gap-4 ${g.color} bg-white`}>
                                     <div className="text-4xl font-black">{g.label}</div>
@@ -1180,9 +1240,9 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                       <label className="block text-xs font-bold text-gray-500 mb-1">วิชา</label>
                                       <select value={qSubject} onChange={(e)=>setQSubject(e.target.value)} className="w-full p-2 border rounded-lg bg-white focus:ring-2 focus:ring-blue-200">
                                           <option value="">-- เลือกวิชา --</option>
-                                          {schoolSubjects.filter(s => s.grade === qBankSelectedGrade).map(s => {
-                                              const count = questions.filter(q => q.subject === s.name && (q.grade || 'P2') === qBankSelectedGrade && (q.school === teacher.school || q.school === 'CENTER')).length;
-                                              return <option key={s.name} value={s.name}>{s.name} (มี {count} ข้อ)</option>
+                                          {availableSubjectNames.map(name => {
+                                              const count = questions.filter(q => String(q.subject).trim() === name && (q.grade || 'P2') === qBankSelectedGrade && (q.school === teacher.school || q.school === 'CENTER' || q.school === 'Admin')).length;
+                                              return <option key={name} value={name}>{name} (มี {count} ข้อ)</option>
                                           })}
                                       </select>
                                   </div>
@@ -1255,15 +1315,17 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                   <button onClick={() => setQBankSubject(null)} className={`px-4 py-2 rounded-xl whitespace-nowrap font-bold text-sm border ${!qBankSubject ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-200'}`}>
                                       ทั้งหมด ({getQuestionCount(null)})
                                   </button>
-                                  {schoolSubjects.filter(s => s.grade === qBankSelectedGrade).map(sub => {
-                                     const count = getQuestionCount(sub.name);
+                                  {availableSubjectNames.map(subName => {
+                                     const count = getQuestionCount(subName);
+                                     const subDef = schoolSubjects.find(s => s.name.trim() === subName && s.grade === qBankSelectedGrade);
+                                     
                                      return (
                                      <button 
-                                         key={sub.name}
-                                         onClick={() => setQBankSubject(sub.name)}
-                                         className={`px-4 py-2 rounded-xl whitespace-nowrap font-bold text-sm border flex items-center gap-2 ${qBankSubject === sub.name ? `bg-${sub.color}-100 text-${sub.color}-700 border-${sub.color}-300` : 'bg-white text-gray-600 border-gray-200'}`}
+                                         key={subName}
+                                         onClick={() => setQBankSubject(subName)}
+                                         className={`px-4 py-2 rounded-xl whitespace-nowrap font-bold text-sm border flex items-center gap-2 ${qBankSubject === subName ? `bg-blue-100 text-blue-700 border-blue-300` : 'bg-white text-gray-600 border-gray-200'}`}
                                      >
-                                         <span>{sub.icon}</span> {sub.name} <span className="text-xs opacity-70">({count})</span>
+                                         <span>{subDef?.icon || '📚'}</span> {subName} <span className="text-xs opacity-70">({count})</span>
                                      </button>
                                   )})}
                               </div>
@@ -1277,6 +1339,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                            <div className="flex gap-2 mb-1">
                                                <span className="text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{q.subject}</span>
                                                {q.school === 'CENTER' && <span className="text-[10px] font-bold bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">ส่วนกลาง</span>}
+                                               {q.school === 'Admin' && <span className="text-[10px] font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded">แอดมิน</span>}
                                            </div>
                                            <p className="font-bold text-gray-800 mb-1">{q.text}</p>
                                            <div className="text-xs text-gray-400 grid grid-cols-2 gap-x-4 gap-y-1 w-fit">
@@ -1362,7 +1425,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                     <div className="bg-green-200 p-3 rounded-full text-green-700"><Activity size={24}/></div>
                                     <div>
                                         <div className="text-2xl font-black text-green-900">{filteredStatistics.activeStudents}</div>
-                                        <div className="text-xs text-green-600 font-bold uppercase">เคยเข้าใช้งาน</div>
+                                        <div className="text-xs text-blue-600 font-bold uppercase">เคยเข้าใช้งาน</div>
                                     </div>
                                 </div>
                             </div>
@@ -1527,7 +1590,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                     <label className="block text-xs font-bold mb-1">วิชา</label>
                                     <select value={qSubject} onChange={(e)=>setQSubject(e.target.value)} className="w-full p-2 border rounded-lg">
                                         <option value="">-- เลือกวิชา --</option>
-                                        {schoolSubjects.filter(s => s.grade === aiGrade).map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
+                                        {availableSubjectNames.map(name => <option key={name} value={name}>{name}</option>)}
                                     </select>
                                 </div>
                             </div>
@@ -1659,7 +1722,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                           </thead>
                           <tbody>
                               {students.filter(s => (s.grade || 'P2') === (selectedAssignment.grade || 'ALL') || selectedAssignment.grade === 'ALL').map(s => {
-                                  const result = stats.filter(r => r.assignmentId === selectedAssignment.id && String(r.studentId) === String(s.id)).pop();
+                                  const studentIdStr = normalizeId(s.id);
+                                  const result = stats.filter(r => r.assignmentId === selectedAssignment.id && normalizeId(r.studentId) === studentIdStr).pop();
                                   return (
                                       <tr key={s.id} className="border-b last:border-0 hover:bg-gray-50">
                                           <td className="p-3 font-bold text-gray-800 flex items-center gap-2">

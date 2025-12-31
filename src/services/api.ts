@@ -1,4 +1,3 @@
-
 import { supabase } from './supabaseClient';
 import { Student, Question, Teacher, Subject, ExamResult, Assignment, RTReadingItem } from '../types';
 import { MOCK_STUDENTS, MOCK_QUESTIONS } from '../constants';
@@ -13,14 +12,17 @@ export interface AppData {
 // Helper: แปลงชื่อวิชาให้เป็นมาตรฐาน
 const normalizeSubject = (rawSubject: string): string => {
   if (!rawSubject) return Subject.THAI;
-  const s = String(rawSubject).trim().toUpperCase();
-  if (s === 'MATH' || s === 'คณิตศาสตร์' || s === 'คณิต') return Subject.MATH;
-  if (s === 'THAI' || s === 'ภาษาไทย' || s === 'ไทย') return Subject.THAI;
-  if (s === 'SCIENCE' || s === 'วิทยาศาสตร์' || s === 'วิทย์') return Subject.SCIENCE;
-  if (s === 'ENGLISH' || s === 'ภาษาอังกฤษ' || s === 'อังกฤษ') return Subject.ENGLISH;
-  if (s === 'RT_READING' || s === 'RT-การอ่านออกเสียง') return Subject.RT_READING;
-  if (s === 'RT_COMPREHENSION' || s === 'RT-การอ่านรู้เรื่อง') return Subject.RT_COMPREHENSION;
-  return rawSubject;
+  const s = String(rawSubject).trim();
+  const up = s.toUpperCase();
+  
+  if (up === 'MATH' || up === 'คณิตศาสตร์' || up === 'คณิต') return Subject.MATH;
+  if (up === 'THAI' || up === 'ภาษาไทย' || up === 'ไทย') return Subject.THAI;
+  if (up === 'SCIENCE' || up === 'วิทยาศาสตร์' || up === 'วิทย์') return Subject.SCIENCE;
+  if (up === 'ENGLISH' || up === 'ภาษาอังกฤษ' || up === 'อังกฤษ') return Subject.ENGLISH;
+  if (up === 'RT_READING' || up === 'RT-การอ่านออกเสียง') return Subject.RT_READING;
+  if (up === 'RT_COMPREHENSION' || up === 'RT-การอ่านรู้เรื่อง') return Subject.RT_COMPREHENSION;
+  
+  return s; // คืนค่าเดิมกรณีเป็นวิชาที่ครูสร้างเอง
 };
 
 // --- RT (Reading Test) Actions ---
@@ -223,16 +225,32 @@ export const deleteAssignment = async (id: string) => {
     return !error;
 };
 
+/**
+ * 🟢 บันทึกคะแนนสอบลง Supabase และอัปเดตดาวสะสมของนักเรียน
+ * Fixes: Module '"../services/api"' has no exported member 'saveScore'.
+ */
 export const saveScore = async (studentId: string, studentName: string, school: string, score: number, total: number, subject: string, assignmentId?: string) => {
   try {
-    await supabase.from('results').insert([{
-        student_id: String(studentId), student_name: studentName, school, subject: normalizeSubject(subject), 
-        score, total_questions: total, assignment_id: assignmentId || '-'
+    const { error } = await supabase.from('results').insert([{
+      student_id: studentId,
+      student_name: studentName,
+      school: school,
+      score: score,
+      total_questions: total,
+      subject: subject,
+      assignment_id: assignmentId || null
     }]);
-    const { data: student } = await supabase.from('students').select('stars').eq('id', studentId).single();
-    if (student) {
+
+    // อัปเดตดาวของนักเรียนในฐานข้อมูลเพื่อการสะสมแต้มที่ถูกต้อง
+    if (!error) {
+      const { data: student } = await supabase.from('students').select('stars').eq('id', studentId).single();
+      if (student) {
         await supabase.from('students').update({ stars: (student.stars || 0) + score }).eq('id', studentId);
+      }
     }
-    return true;
-  } catch (e) { return false; }
+    return !error;
+  } catch (e) {
+    console.error("Save score error:", e);
+    return false;
+  }
 };
