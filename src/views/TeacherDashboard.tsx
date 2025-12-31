@@ -11,7 +11,6 @@ interface TeacherDashboardProps {
   teacher: Teacher;
   onLogout: () => void;
   onStartGame: () => void;
-  // Added onAdminLoginAsStudent to fix type mismatch in App.tsx
   onAdminLoginAsStudent: (student: Student) => void;
 }
 
@@ -40,7 +39,13 @@ const COLOR_OPTIONS = [
 
 const ICONS = ['📖', '📐', '🧬', '🎨', '🎵', '⚽', '🌍', '💻', '🧩', '📝'];
 
-// Added onAdminLoginAsStudent to destructuring props
+const RT_CATEGORIES = [
+    { id: 'RT-อ่านเป็นคำ', label: 'การอ่านออกเสียงคำ', icon: '📝', color: 'text-orange-500', bg: 'bg-orange-50' },
+    { id: 'RT-อ่านประโยค', label: 'การอ่านออกเสียงประโยค', icon: '💬', color: 'text-sky-500', bg: 'bg-sky-50' },
+    { id: 'RT-อ่านข้อความ', label: 'การอ่านออกเสียงข้อความ', icon: '📖', color: 'text-emerald-500', bg: 'bg-emerald-50' },
+    { id: 'RT-การอ่านรู้เรื่อง', label: 'การอ่านรู้เรื่อง', icon: '🧠', color: 'text-pink-500', bg: 'bg-pink-50' },
+];
+
 const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, onStartGame, onAdminLoginAsStudent }) => {
   const [activeTab, setActiveTab] = useState<'menu' | 'students' | 'subjects' | 'stats' | 'questions' | 'assignments' | 'teachers' | 'rt'>('menu');
   const [statsTab, setStatsTab] = useState<'students' | 'subjects'>('students');
@@ -54,7 +59,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [loading, setLoading] = useState(true);
 
   // 🦉 RT Management State
-  const [rtSubTab, setRtSubTab] = useState<'reading' | 'comprehension'>('reading');
+  const [rtSubTab, setRtSubTab] = useState<'reading' | 'comprehension' | 'statistics'>('statistics');
   const [rtItems, setRtItems] = useState<any[]>([]);
   const [rtReadingType, setRtReadingType] = useState<'WORD' | 'SENTENCE' | 'PASSAGE'>('WORD');
   const [rtCompPart, setRtCompPart] = useState<'MATCHING' | 'SENTENCE' | 'PASSAGE'>('MATCHING');
@@ -146,6 +151,45 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const normalizeId = (id: any) => id ? String(id).trim() : '';
   const isAdmin = teacher.username?.toLowerCase() === 'admin' || teacher.role === 'ADMIN' || teacher.role === 'admin';
 
+  // 📊 คำนวณสถิติ RT ภาพรวม
+  const rtSummary = useMemo(() => {
+    return RT_CATEGORIES.map(cat => {
+        const catResults = stats.filter(r => r.subject === cat.id);
+        if (catResults.length === 0) return { ...cat, avg: 0, count: 0 };
+        const totalPercent = catResults.reduce((sum, r) => sum + ((r.score / r.totalQuestions) * 100), 0);
+        return { 
+            ...cat, 
+            avg: Math.round(totalPercent / catResults.length), 
+            count: catResults.length 
+        };
+    });
+  }, [stats]);
+
+  // 📈 คำนวณคะแนน RT รายบุคคล
+  const studentRtStats = useMemo(() => {
+    return students.filter(s => s.grade === 'P1').map(student => {
+        const studentResults = stats.filter(r => r.studentId === student.id);
+        const scores: Record<string, number> = {};
+        
+        RT_CATEGORIES.forEach(cat => {
+            const results = studentResults.filter(r => r.subject === cat.id);
+            if (results.length > 0) {
+                const totalPercent = results.reduce((sum, r) => sum + ((r.score / r.totalQuestions) * 100), 0);
+                scores[cat.id] = Math.round(totalPercent / results.length);
+            } else {
+                scores[cat.id] = 0;
+            }
+        });
+        
+        return {
+            id: student.id,
+            name: student.name,
+            avatar: student.avatar,
+            scores
+        };
+    });
+  }, [students, stats]);
+
   const filteredStatistics = useMemo(() => {
       const targetStudents = students.filter(s => statsGrade === 'ALL' || (s.grade || 'P2') === statsGrade);
       const targetStudentIds = new Set(targetStudents.map(s => s.id));
@@ -203,7 +247,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   }, [viewingSubjectGrade]);
 
   useEffect(() => {
-    if (activeTab === 'rt') {
+    if (activeTab === 'rt' && rtSubTab !== 'statistics') {
         loadRtData();
     }
   }, [activeTab, rtSubTab, rtReadingType]);
@@ -635,12 +679,92 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             {/* 🦉 RT MANAGEMENT TAB */}
             {activeTab === 'rt' && (
                 <div className="space-y-6">
-                    <div className="flex gap-4 p-2 bg-gray-50 rounded-2xl w-fit">
-                        <button onClick={() => setRtSubTab('reading')} className={`px-6 py-2 rounded-xl font-bold transition ${rtSubTab === 'reading' ? 'bg-sky-500 text-white shadow-md' : 'text-gray-400'}`}>1. การอ่านออกเสียง</button>
-                        <button onClick={() => setRtSubTab('comprehension')} className={`px-6 py-2 rounded-xl font-bold transition ${rtSubTab === 'comprehension' ? 'bg-sky-500 text-white shadow-md' : 'text-gray-400'}`}>2. การอ่านรู้เรื่อง</button>
+                    <div className="flex flex-wrap gap-2 p-1.5 bg-gray-100 rounded-2xl w-fit">
+                        <button onClick={() => setRtSubTab('statistics')} className={`px-6 py-2 rounded-xl font-bold transition ${rtSubTab === 'statistics' ? 'bg-white text-sky-600 shadow-sm' : 'text-gray-400 hover:bg-gray-200'}`}>3. สรุปผลคะแนนเฉลี่ย</button>
+                        <button onClick={() => setRtSubTab('reading')} className={`px-6 py-2 rounded-xl font-bold transition ${rtSubTab === 'reading' ? 'bg-white text-sky-600 shadow-sm' : 'text-gray-400 hover:bg-gray-200'}`}>1. การอ่านออกเสียง</button>
+                        <button onClick={() => setRtSubTab('comprehension')} className={`px-6 py-2 rounded-xl font-bold transition ${rtSubTab === 'comprehension' ? 'bg-white text-sky-600 shadow-sm' : 'text-gray-400 hover:bg-gray-200'}`}>2. การอ่านรู้เรื่อง</button>
                     </div>
 
-                    {rtSubTab === 'reading' ? (
+                    {rtSubTab === 'statistics' ? (
+                        <div className="animate-fade-in space-y-8">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                {rtSummary.map(cat => (
+                                    <div key={cat.id} className={`${cat.bg} p-6 rounded-[32px] border-2 border-white shadow-sm flex flex-col items-center text-center group hover:scale-105 transition-transform`}>
+                                        <div className="text-4xl mb-3 group-hover:rotate-12 transition-transform">{cat.icon}</div>
+                                        <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">{cat.label}</div>
+                                        <div className={`text-4xl font-black ${cat.color}`}>{cat.avg}%</div>
+                                        <div className="text-[10px] text-gray-400 font-bold mt-2">ฝึกฝนไปแล้ว {cat.count} ครั้ง</div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="bg-gray-50 rounded-[40px] p-6 md:p-8 border-2 border-white shadow-inner">
+                                <div className="flex items-center gap-3 mb-6">
+                                    <div className="bg-sky-500 p-2 rounded-xl text-white shadow-lg shadow-sky-100"><Users size={24}/></div>
+                                    <div>
+                                        <h4 className="font-black text-gray-800 text-xl font-fun">คะแนนเฉลี่ย RT รายบุคคล (ป.1)</h4>
+                                        <p className="text-sm text-gray-400 font-bold">แสดงความแม่นยำเฉลี่ยแยกตามทักษะจ้ะ</p>
+                                    </div>
+                                </div>
+
+                                <div className="overflow-x-auto bg-white rounded-3xl shadow-sm border border-gray-100">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr className="bg-gray-50 text-gray-400 text-[10px] font-black uppercase tracking-widest">
+                                                <th className="p-4 rounded-tl-3xl">นักเรียน</th>
+                                                <th className="p-4 text-center">อ่านคำ</th>
+                                                <th className="p-4 text-center">อ่านประโยค</th>
+                                                <th className="p-4 text-center">อ่านข้อความ</th>
+                                                <th className="p-4 text-center">การอ่านรู้เรื่อง</th>
+                                                <th className="p-4 text-center rounded-tr-3xl">ภาพรวม</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-50">
+                                            {studentRtStats.map(s => {
+                                                const scores = Object.values(s.scores);
+                                                const playedScores = scores.filter(v => v > 0);
+                                                const overall = playedScores.length > 0 ? Math.round(playedScores.reduce((a,b)=>a+b,0) / playedScores.length) : 0;
+                                                
+                                                return (
+                                                    <tr key={s.id} className="hover:bg-sky-50/30 transition-colors">
+                                                        <td className="p-4">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center text-2xl border border-gray-100 shadow-inner">{s.avatar}</div>
+                                                                <div>
+                                                                    <div className="font-bold text-gray-700 text-sm">{s.name}</div>
+                                                                    <div className="text-[10px] text-gray-400 font-bold">ID: {s.id}</div>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        {RT_CATEGORIES.map(cat => {
+                                                            const score = s.scores[cat.id] || 0;
+                                                            return (
+                                                                <td key={cat.id} className="p-4 text-center">
+                                                                    <div className={`inline-block px-3 py-1 rounded-full font-black text-xs ${score >= 80 ? 'bg-green-50 text-green-600' : score >= 50 ? 'bg-orange-50 text-orange-600' : score > 0 ? 'bg-red-50 text-red-600' : 'text-gray-300'}`}>
+                                                                        {score > 0 ? `${score}%` : '-'}
+                                                                    </div>
+                                                                </td>
+                                                            );
+                                                        })}
+                                                        <td className="p-4 text-center">
+                                                            <div className={`font-black text-base ${overall >= 80 ? 'text-green-600' : overall >= 50 ? 'text-orange-600' : 'text-gray-400'}`}>
+                                                                {overall > 0 ? `${overall}%` : '-'}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                            {studentRtStats.length === 0 && (
+                                                <tr>
+                                                    <td colSpan={6} className="p-20 text-center text-gray-400 font-bold">ยังไม่มีข้อมูลคะแนน RT ของนักเรียน ป.1 จ้ะ</td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    ) : rtSubTab === 'reading' ? (
                         <div className="grid md:grid-cols-3 gap-8 animate-fade-in">
                             <div className="bg-gray-50 p-6 rounded-2xl border border-sky-100 h-fit">
                                 <h4 className="font-bold text-gray-800 mb-4">เพิ่มคลังการอ่านออกเสียง</h4>

@@ -128,10 +128,10 @@ const App: React.FC = () => {
             return <Dashboard student={currentUser!} assignments={assignments} examResults={examResults} onNavigate={setCurrentPage} onStartAssignment={(hw) => { setCurrentAssignment(hw); setSelectedSubject(hw.subject as Subject); setCurrentPage('practice'); }} onSelectSubject={handleSelectSubject} />;
           
           case 'rt-dashboard': 
-            return <RTDashboard onBack={() => setCurrentPage('dashboard')} onNavigate={setCurrentPage} />;
+            return <RTDashboard student={currentUser!} examResults={examResults} onBack={() => setCurrentPage('dashboard')} onNavigate={setCurrentPage} />;
           
           case 'rt-reading-aloud': 
-            return <RTReadingAloud student={currentUser!} onBack={() => setCurrentPage('rt-dashboard')} onUpdateStars={(s) => setCurrentUser(prev => prev ? { ...prev, stars: s } : null)} />;
+            return <RTReadingAloud student={currentUser!} examResults={examResults} onBack={() => setCurrentPage('rt-dashboard')} onUpdateStars={(s) => setCurrentUser(prev => prev ? { ...prev, stars: s } : null)} />;
           
           case 'rt-comprehension':
             const rtCompQuestions = questions.filter(q => q.subject === Subject.RT_COMPREHENSION);
