@@ -25,6 +25,8 @@ export enum Subject {
   ENGLISH = 'ภาษาอังกฤษ',
   RT_READING = 'RT-การอ่านออกเสียง',
   RT_COMPREHENSION = 'RT-การอ่านรู้เรื่อง',
+  NT_MATH = 'NT-คณิตศาสตร์',
+  NT_THAI = 'NT-ภาษาไทย',
   SPELLING = 'การสะกดคำ',
   TONES = 'วรรณยุกต์',
   CLUSTERS = 'คำควบกล้ำ',

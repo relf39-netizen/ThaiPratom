@@ -1,7 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
-  BookOpen, Gamepad2, BarChart3, Star, Calendar, CheckCircle, 
-  History, ArrowLeft, Loader2, Mic2, BookText, Trophy, Sparkles
+  BookOpen, Gamepad2, Star, Calendar, CheckCircle, 
+  History, ArrowLeft, Loader2, Mic2, BookText, Trophy, Sparkles,
+  Calculator, BrainCircuit
 } from 'lucide-react';
 import { Student, Assignment, ExamResult, Subject, SubjectDef } from '../types';
 import { getSchoolSubjects } from '../services/subjectService';
@@ -37,7 +39,7 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
   const pendingAssignments = myAssignments.filter(a => !examResults.some(r => r.assignmentId === a.id));
   const finishedAssignments = myAssignments.filter(a => examResults.some(r => r.assignmentId === a.id));
 
-  const handleRTAction = (title: string, route: string) => {
+  const handleMissionAction = (title: string, route: string) => {
       speak(`เข้าสู่ ${title} จ้ะ`);
       onNavigate(route);
   };
@@ -120,19 +122,61 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <button onClick={() => handleRTAction('ฝึกอ่านออกเสียง', 'rt-reading-aloud')} className="flex flex-col items-center p-6 bg-orange-50 hover:bg-orange-100 border-b-8 border-orange-200 rounded-[35px] transition-all transform hover:-translate-y-1 active:translate-y-1 active:border-b-0 group">
+                        <button onClick={() => handleMissionAction('ฝึกอ่านออกเสียง', 'rt-reading-aloud')} className="flex flex-col items-center p-6 bg-orange-50 hover:bg-orange-100 border-b-8 border-orange-200 rounded-[35px] transition-all transform hover:-translate-y-1 active:translate-y-1 active:border-b-0 group">
                             <div className="bg-white p-4 rounded-3xl shadow-sm text-orange-500 mb-3 group-hover:scale-110 transition-transform"><Mic2 size={36} /></div>
                             <span className="font-black text-orange-700 text-lg font-fun">ฝึกอ่านออกเสียง</span>
                         </button>
 
-                        <button onClick={() => handleRTAction('ฝึกอ่านรู้เรื่อง', 'rt-comprehension')} className="flex flex-col items-center p-6 bg-sky-50 hover:bg-sky-100 border-b-8 border-sky-200 rounded-[35px] transition-all transform hover:-translate-y-1 active:translate-y-1 active:border-b-0 group">
+                        <button onClick={() => handleMissionAction('ฝึกอ่านรู้เรื่อง', 'rt-comprehension')} className="flex flex-col items-center p-6 bg-sky-50 hover:bg-sky-100 border-b-8 border-sky-200 rounded-[35px] transition-all transform hover:-translate-y-1 active:translate-y-1 active:border-b-0 group">
                             <div className="bg-white p-4 rounded-3xl shadow-sm text-sky-500 mb-3 group-hover:scale-110 transition-transform"><BookText size={36} /></div>
                             <span className="font-black text-sky-700 text-lg font-fun">ฝึกอ่านรู้เรื่อง</span>
                         </button>
 
-                        <button onClick={() => handleRTAction('สถิติของฉัน', 'rt-stats')} className="flex flex-col items-center p-6 bg-emerald-50 hover:bg-emerald-100 border-b-8 border-emerald-200 rounded-[35px] transition-all transform hover:-translate-y-1 active:translate-y-1 active:border-b-0 group">
+                        <button onClick={() => handleMissionAction('สถิติของฉัน', 'rt-stats')} className="flex flex-col items-center p-6 bg-emerald-50 hover:bg-emerald-100 border-b-8 border-emerald-200 rounded-[35px] transition-all transform hover:-translate-y-1 active:translate-y-1 active:border-b-0 group">
                             <div className="bg-white p-4 rounded-3xl shadow-sm text-emerald-500 mb-3 group-hover:scale-110 transition-transform"><Trophy size={36} /></div>
                             <span className="font-black text-emerald-700 text-lg font-fun">สถิติของฉัน</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* 🐘 NT Special Mission - ONLY FOR GRADE P3 */}
+      {(student.grade === 'P3' || student.grade === 'p3') && (
+        <div className="space-y-4">
+            <div className="flex items-center gap-2 ml-4">
+                <Sparkles className="text-purple-500 fill-purple-500 animate-pulse" size={28} />
+                <h3 className="text-2xl font-black text-gray-800 font-fun">ภารกิจเตรียมสอบ NT ป.3</h3>
+            </div>
+            
+            <div className="bg-white rounded-[50px] p-8 shadow-2xl border-4 border-purple-100 flex flex-col lg:flex-row items-center gap-8 relative overflow-hidden group">
+                <div className="absolute -top-6 -right-6 text-purple-50 opacity-10 group-hover:scale-110 transition-transform"><BrainCircuit size={200} /></div>
+                <div className="flex flex-col items-center">
+                    <div className="text-[100px] animate-bounce cursor-pointer" onClick={() => speak("พี่ช้างพร้อมติว NT ให้แล้วจ้ะ")}>🐘</div>
+                    <div className="bg-purple-50 px-4 py-1 rounded-full text-purple-700 font-black text-sm">พี่ช้างพร้อมติว!</div>
+                </div>
+
+                <div className="flex-1 space-y-6 relative z-10">
+                    <div className="text-center lg:text-left">
+                        <h4 className="text-3xl font-black text-purple-600 font-fun mb-2">ตะลุยโจทย์ NT พิชิตคะแนนเต็ม</h4>
+                        <p className="text-gray-500 font-bold">ฝึกฝนทักษะการคำนวณและภาษาไทยเพื่อเตรียมสอบระดับชาติจ้ะ</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <button onClick={() => handleMissionAction('ติว NT คณิตศาสตร์', 'nt-math')} className="flex flex-col items-center p-6 bg-blue-50 hover:bg-blue-100 border-b-8 border-blue-200 rounded-[35px] transition-all transform hover:-translate-y-1 active:translate-y-1 active:border-b-0 group">
+                            <div className="bg-white p-4 rounded-3xl shadow-sm text-blue-500 mb-3 group-hover:scale-110 transition-transform"><Calculator size={36} /></div>
+                            <span className="font-black text-blue-700 text-lg font-fun">ด้านคำนวณ</span>
+                        </button>
+
+                        <button onClick={() => handleMissionAction('ติว NT ภาษาไทย', 'nt-thai')} className="flex flex-col items-center p-6 bg-pink-50 hover:bg-pink-100 border-b-8 border-pink-200 rounded-[35px] transition-all transform hover:-translate-y-1 active:translate-y-1 active:border-b-0 group">
+                            <div className="bg-white p-4 rounded-3xl shadow-sm text-pink-500 mb-3 group-hover:scale-110 transition-transform"><BookText size={36} /></div>
+                            <span className="font-black text-pink-700 text-lg font-fun">ด้านภาษาไทย</span>
+                        </button>
+
+                        <button onClick={() => handleMissionAction('สถิติ NT ของฉัน', 'nt-stats')} className="flex flex-col items-center p-6 bg-indigo-50 hover:bg-indigo-100 border-b-8 border-indigo-200 rounded-[35px] transition-all transform hover:-translate-y-1 active:translate-y-1 active:border-b-0 group">
+                            <div className="bg-white p-4 rounded-3xl shadow-sm text-indigo-500 mb-3 group-hover:scale-110 transition-transform"><Trophy size={36} /></div>
+                            <span className="font-black text-indigo-700 text-lg font-fun">สถิติของฉัน</span>
                         </button>
                     </div>
                 </div>

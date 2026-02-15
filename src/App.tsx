@@ -134,12 +134,35 @@ const App: React.FC = () => {
             return <RTReadingAloud student={currentUser!} examResults={examResults} onBack={() => setCurrentPage('rt-dashboard')} onUpdateStars={(s) => setCurrentUser(prev => prev ? { ...prev, stars: s } : null)} />;
           
           case 'rt-comprehension':
-            const rtCompQuestions = questions.filter(q => q.subject === Subject.RT_COMPREHENSION);
+            const rtCompQuestions = questions.filter(q => String(q.subject) === String(Subject.RT_COMPREHENSION) || String(q.subject).includes('RT-การอ่านรู้เรื่อง'));
             return <PracticeMode questions={rtCompQuestions} onFinish={(s, t) => handleFinishExam(s, t)} onBack={() => setCurrentPage('rt-dashboard')} />;
           
           case 'rt-stats': 
             return <Stats examResults={examResults} student={currentUser!} onBack={() => setCurrentPage('rt-dashboard')} />;
           
+          case 'nt-math':
+            // ดึงข้อสอบที่เป็น NT-Math หรือ Math ปกติของ ป.3 (เผื่อครูสร้างสลับหมวด)
+            const ntMathQs = questions.filter(q => {
+                const subStr = String(q.subject);
+                return subStr === String(Subject.NT_MATH) || 
+                       subStr === 'NT-คณิตศาสตร์' || 
+                       (subStr === String(Subject.MATH) && q.grade === 'P3');
+            });
+            return <PracticeMode questions={ntMathQs} onFinish={(s, t) => handleFinishExam(s, t)} onBack={() => setCurrentPage('dashboard')} />;
+          
+          case 'nt-thai':
+            // ดึงข้อสอบที่เป็น NT-Thai หรือ Thai ปกติของ ป.3
+            const ntThaiQs = questions.filter(q => {
+                const subStr = String(q.subject);
+                return subStr === String(Subject.NT_THAI) || 
+                       subStr === 'NT-ภาษาไทย' || 
+                       (subStr === String(Subject.THAI) && q.grade === 'P3');
+            });
+            return <PracticeMode questions={ntThaiQs} onFinish={(s, t) => handleFinishExam(s, t)} onBack={() => setCurrentPage('dashboard')} />;
+
+          case 'nt-stats':
+            return <Stats examResults={examResults} student={currentUser!} onBack={() => setCurrentPage('dashboard')} />;
+
           case 'shop': 
             return <RewardShop student={currentUser!} onBack={() => setCurrentPage('dashboard')} onUpdateStudent={(s) => setCurrentUser(s)} />;
           

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Teacher, Student, Subject, Assignment, Question, SubjectDef } from '../types';
-import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, Sparkles, Wand2, Library, ArrowLeft, GraduationCap, Trash2, Edit, UserCog, PenTool, Clock, TrendingUp, Trophy, Activity, Users, PieChart, Search, Filter, Mic, BookOpen } from 'lucide-react';
+import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, Sparkles, Wand2, Library, ArrowLeft, GraduationCap, Trash2, Edit, UserCog, PenTool, Clock, TrendingUp, Trophy, Activity, Users, PieChart, Search, Filter, Mic, BookOpen, BrainCircuit, Calculator } from 'lucide-react';
 import { getTeacherDashboard, manageStudent, addAssignment, addQuestion, editQuestion, deleteQuestion, deleteAssignment, getTeachers, manageTeacher, getRTReadingData, manageRTReading } from '../services/api';
 import { generateQuestionWithAI, generateRTReadingWithAI, generateRTComprehensionWithAI, GeneratedQuestion } from '../services/aiService';
 import { getSchoolSubjects, addSubject, deleteSubject } from '../services/subjectService';
@@ -46,8 +46,13 @@ const RT_CATEGORIES = [
     { id: 'RT-การอ่านรู้เรื่อง', label: 'การอ่านรู้เรื่อง', icon: '🧠', color: 'text-pink-500', bg: 'bg-pink-50' },
 ];
 
+const NT_CATEGORIES = [
+    { id: Subject.NT_MATH, label: 'ความสามารถด้านคำนวณ', icon: '📐', color: 'text-purple-600', bg: 'bg-purple-50' },
+    { id: Subject.NT_THAI, label: 'ความสามารถด้านภาษาไทย', icon: '📖', color: 'text-pink-600', bg: 'bg-pink-50' },
+];
+
 const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, onStartGame, onAdminLoginAsStudent }) => {
-  const [activeTab, setActiveTab] = useState<'menu' | 'students' | 'subjects' | 'stats' | 'questions' | 'assignments' | 'teachers' | 'rt'>('menu');
+  const [activeTab, setActiveTab] = useState<'menu' | 'students' | 'subjects' | 'stats' | 'questions' | 'assignments' | 'teachers' | 'rt' | 'nt'>('menu');
   const [statsTab, setStatsTab] = useState<'students' | 'subjects'>('students');
   const [statsGrade, setStatsGrade] = useState<string>('ALL'); 
   
@@ -65,6 +70,9 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [rtCompPart, setRtCompPart] = useState<'MATCHING' | 'SENTENCE' | 'PASSAGE'>('MATCHING');
   const [newRtText, setNewRtText] = useState('');
   const [draftRTItems, setDraftRTItems] = useState<any[]>([]);
+
+  // 🐘 NT Management State
+  const [ntSubTab, setNtSubTab] = useState<'math' | 'thai' | 'statistics'>('statistics');
   
   // Custom Subjects State
   const [schoolSubjects, setSchoolSubjects] = useState<SubjectDef[]>([]);
@@ -139,7 +147,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       title: string;
       message: string;
       targetId: string;
-      type: 'STUDENT' | 'ASSIGNMENT' | 'QUESTION' | 'SUBJECT' | 'TEACHER' | 'RT';
+      type: 'STUDENT' | 'ASSIGNMENT' | 'QUESTION' | 'SUBJECT' | 'TEACHER' | 'RT' | 'NT';
   }>({
       isOpen: false,
       title: '',
@@ -207,6 +215,41 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             avatar: student.avatar,
             scores
         };
+    });
+  }, [students, stats]);
+
+  // 🐘 คำนวณสถิติ NT ภาพรวม ป.3
+  const ntSummary = useMemo(() => {
+    return NT_CATEGORIES.map(cat => {
+        const catResults = stats.filter(r => r.subject === cat.id);
+        if (catResults.length === 0) return { ...cat, avg: 0, count: 0 };
+        let validSum = 0, validCount = 0;
+        catResults.forEach(r => {
+            const tq = Number(r.totalQuestions) || 0;
+            if (tq > 0) { validSum += (Number(r.score) / tq) * 100; validCount++; }
+        });
+        return { ...cat, avg: validCount > 0 ? Math.round(validSum / validCount) : 0, count: catResults.length };
+    });
+  }, [stats]);
+
+  // 📈 คำนวณคะแนน NT รายบุคคล (ป.3)
+  const studentNtStats = useMemo(() => {
+    return students.filter(s => s.grade === 'P3').map(student => {
+        const studentIdStr = normalizeId(student.id);
+        const studentResults = stats.filter(r => normalizeId(r.studentId) === studentIdStr);
+        const scores: Record<string, number> = {};
+        NT_CATEGORIES.forEach(cat => {
+            const results = studentResults.filter(r => r.subject === cat.id);
+            if (results.length > 0) {
+                let catSum = 0, catCount = 0;
+                results.forEach(r => {
+                    const tq = Number(r.totalQuestions) || 0;
+                    if (tq > 0) { catSum += (Number(r.score) / tq) * 100; catCount++; }
+                });
+                scores[cat.id] = catCount > 0 ? Math.round(catSum / catCount) : 0;
+            } else { scores[cat.id] = 0; }
+        });
+        return { id: student.id, name: student.name, avatar: student.avatar, scores };
     });
   }, [students, stats]);
 
@@ -336,7 +379,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       setSubjectLoading(false);
   };
 
-  const openDeleteModal = (targetId: string, type: 'STUDENT' | 'ASSIGNMENT' | 'QUESTION' | 'SUBJECT' | 'TEACHER' | 'RT') => {
+  const openDeleteModal = (targetId: string, type: 'STUDENT' | 'ASSIGNMENT' | 'QUESTION' | 'SUBJECT' | 'TEACHER' | 'RT' | 'NT') => {
       let title = '', message = '';
       if (type === 'STUDENT') { title = 'ยืนยันลบนักเรียน'; message = 'ข้อมูลคะแนนจะหายไปด้วย'; }
       if (type === 'ASSIGNMENT') { title = 'ยืนยันลบการบ้าน'; message = 'ข้อมูลการส่งงานจะหายไป'; }
@@ -344,6 +387,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       if (type === 'SUBJECT') { title = 'ยืนยันลบรายวิชา'; message = 'วิชานี้จะหายไปจากหน้านักเรียน'; }
       if (type === 'TEACHER') { title = 'ยืนยันลบข้อมูลครู'; message = 'บัญชีนี้จะไม่สามารถเข้าสู่ระบบได้'; }
       if (type === 'RT') { title = 'ยืนยันลบข้อมูลการอ่าน'; message = 'ลบคำศัพท์นี้ออกจากคลัง'; }
+      if (type === 'NT') { title = 'ยืนยันลบข้อสอบ NT'; message = 'ลบออกจากคลังข้อสอบ NT'; }
 
       setDeleteModal({ isOpen: true, title, message, targetId, type });
   };
@@ -363,7 +407,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       } else if (type === 'ASSIGNMENT') {
           await deleteAssignment(targetId);
           await loadData();
-      } else if (type === 'QUESTION') {
+      } else if (type === 'QUESTION' || type === 'NT') {
           await deleteQuestion(targetId);
           await loadData();
       } else if (type === 'TEACHER') {
@@ -462,7 +506,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       setQText(q.text);
       setQImage(q.image || '');
       setQCorrect(String(q.correctChoiceId));
-      setQCorrect(String(q.correctChoiceId));
       setQExplain(q.explanation);
       
       const choices = { c1: '', c2: '', c3: '', c4: '' };
@@ -517,6 +560,10 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 const results = await generateRTComprehensionWithAI(rtCompPart, aiInstructions, geminiApiKey, 5);
                 setDraftQuestions(results);
             }
+        } else if (activeTab === 'nt') {
+            const ntSubject = ntSubTab === 'math' ? Subject.NT_MATH : Subject.NT_THAI;
+            const results = await generateQuestionWithAI(ntSubject, 'P3', aiInstructions, geminiApiKey, 5);
+            setDraftQuestions(results);
         } else {
             if (!qSubject) return alert("กรุณาเลือกวิชา");
             const results = await generateQuestionWithAI(qSubject, aiGrade, aiInstructions, geminiApiKey, 5);
@@ -549,11 +596,20 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
              }
          }
 
-         // Handle Question Drafts (General or RT Comprehension)
+         // Handle Question Drafts (General, RT Comprehension, or NT)
          if (draftQuestions.length > 0) {
-             const isRTComp = activeTab === 'rt' && rtSubTab === 'comprehension';
-             const targetSubject = isRTComp ? Subject.RT_COMPREHENSION : qSubject;
-             const targetGrade = isRTComp ? 'P1' : aiGrade;
+             let targetSubject = qSubject;
+             let targetGrade = aiGrade;
+             let extraData: any = {};
+
+             if (activeTab === 'rt' && rtSubTab === 'comprehension') {
+                 targetSubject = Subject.RT_COMPREHENSION;
+                 targetGrade = 'P1';
+                 extraData.rt_part = rtCompPart;
+             } else if (activeTab === 'nt') {
+                 targetSubject = ntSubTab === 'math' ? Subject.NT_MATH : Subject.NT_THAI;
+                 targetGrade = 'P3';
+             }
 
              for (const q of draftQuestions) {
                  const ok = await addQuestion({
@@ -566,7 +622,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                      explanation: q.explanation || '',
                      school: teacher.school,
                      teacherId: normalizeId(teacher.id),
-                     rt_part: isRTComp ? rtCompPart : undefined
+                     ...extraData
                  });
                  if (ok) successCount++;
              }
@@ -595,8 +651,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       return questions.filter(q => {
           if ((q.grade || 'P2') !== qBankSelectedGrade) return false;
           
-          // ไม่แสดงข้อสอบ RT ในคลังข้อสอบปกติ
-          if (String(q.subject).includes('RT-') || q.subject === Subject.RT_COMPREHENSION || q.subject === Subject.RT_READING) return false;
+          // ไม่แสดงข้อสอบ RT/NT ในคลังข้อสอบปกติ
+          if (String(q.subject).includes('RT-') || String(q.subject).includes('NT-') || q.subject === Subject.RT_COMPREHENSION || q.subject === Subject.RT_READING) return false;
 
           // ตรวจสอบสังกัด (Visibility)
           const isVisible = q.school === teacher.school || q.school === 'CENTER' || q.school === 'Admin' || normalizeId(q.teacherId) === currentTid;
@@ -613,8 +669,13 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       const currentTid = normalizeId(teacher.id);
       let filtered = questions;
       
-      // กรองวิชา RT ออกจากคลังข้อสอบทั่วไป
-      filtered = filtered.filter(q => !String(q.subject).includes('RT-') && q.subject !== Subject.RT_COMPREHENSION && q.subject !== Subject.RT_READING);
+      // กรองวิชา RT/NT ออกจากคลังข้อสอบทั่วไป
+      filtered = filtered.filter(q => 
+        !String(q.subject).includes('RT-') && 
+        !String(q.subject).includes('NT-') && 
+        q.subject !== Subject.RT_COMPREHENSION && 
+        q.subject !== Subject.RT_READING
+      );
 
       if (qBankSelectedGrade) {
           filtered = filtered.filter(q => (q.grade || 'P2') === qBankSelectedGrade);
@@ -638,20 +699,20 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       return filtered;
   }, [questions, qBankSelectedGrade, showMyQuestionsOnly, qBankSubject, teacher.school, teacher.id]);
 
-  // ดึงวิชาทั้งหมดที่มีในคลังข้อสอบจริงๆ สำหรับระดับชั้นที่เลือก (ไม่เอา RT)
+  // ดึงวิชาทั้งหมดที่มีในคลังข้อสอบจริงๆ สำหรับระดับชั้นที่เลือก (ไม่เอา RT/NT)
   const availableSubjectNames = useMemo(() => {
       if (!qBankSelectedGrade) return [];
       const currentTid = normalizeId(teacher.id);
       const subjectsInPool = questions
         .filter(q => (q.grade || 'P2') === qBankSelectedGrade)
-        .filter(q => !String(q.subject).includes('RT-') && q.subject !== Subject.RT_COMPREHENSION && q.subject !== Subject.RT_READING)
+        .filter(q => !String(q.subject).includes('RT-') && !String(q.subject).includes('NT-') && q.subject !== Subject.RT_COMPREHENSION && q.subject !== Subject.RT_READING)
         .filter(q => q.school === teacher.school || q.school === 'CENTER' || q.school === 'Admin' || normalizeId(q.teacherId) === currentTid)
         .map(q => String(q.subject).trim());
       
-      // รวมกับวิชาที่ครูตั้งค่าไว้ (กรอง RT ออก)
+      // รวมกับวิชาที่ครูตั้งค่าไว้ (กรอง RT/NT ออก)
       const definedSubjects = schoolSubjects
         .filter(s => s.grade === qBankSelectedGrade)
-        .filter(s => !String(s.name).includes('RT-'))
+        .filter(s => !String(s.name).includes('RT-') && !String(s.name).includes('NT-'))
         .map(s => s.name.trim());
       
       return Array.from(new Set([...subjectsInPool, ...definedSubjects])).sort();
@@ -663,6 +724,11 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         (q.rt_part === rtCompPart || (!q.rt_part && rtCompPart === 'MATCHING'))
     );
   }, [questions, rtCompPart]);
+
+  const filteredNTQuestions = useMemo(() => {
+    const targetSub = ntSubTab === 'math' ? Subject.NT_MATH : Subject.NT_THAI;
+    return questions.filter(q => q.subject === targetSub);
+  }, [questions, ntSubTab]);
 
   const formatDate = (dateString: string) => {
     if (!dateString) return '-';
@@ -721,6 +787,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 px-4 md:px-0 animate-fade-in">
             <MenuCard icon={<UserPlus size={40} />} title="จัดการนักเรียน" desc="ลงทะเบียนนักเรียน ป.1-6" color="bg-purple-50 text-purple-600 border-purple-200" onClick={() => setActiveTab('students')} />
             <MenuCard icon={<Mic size={40} />} title="เตรียมสอบ RT ป.1" desc="คลังอ่านออกเสียง/รู้เรื่อง" color="bg-sky-50 text-sky-600 border-sky-200" onClick={() => setActiveTab('rt')} />
+            <MenuCard icon={<BrainCircuit size={40} />} title="เตรียมสอบ NT ป.3" desc="คลังโจทย์คำนวณ/ภาษาไทย" color="bg-pink-50 text-pink-600 border-pink-200" onClick={() => setActiveTab('nt')} />
             <MenuCard icon={<Library size={40} />} title="จัดการรายวิชา" desc="สร้างวิชาเรียนเอง" color="bg-indigo-50 text-indigo-600 border-indigo-200" onClick={() => { setActiveTab('subjects'); loadSubjects(); }} />
             {isAdmin && (
                 <MenuCard icon={<UserCog size={40} />} title="จัดการข้อมูลครู" desc="เพิ่ม/แก้ไข บัญชีครู" color="bg-teal-50 text-teal-600 border-teal-200" onClick={() => { setActiveTab('teachers'); loadTeachers(); }} />
@@ -736,6 +803,119 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         <div className="bg-white rounded-3xl shadow-sm p-4 md:p-6 min-h-[400px] relative animate-fade-in">
              <button onClick={() => { setActiveTab('menu'); setQBankSelectedGrade(null); setViewingSubjectGrade(null); }} className="mb-6 flex items-center gap-2 text-gray-500 hover:text-purple-600 font-bold transition-colors"><div className="bg-gray-100 p-2 rounded-full"><ArrowLeft size={20} /></div> กลับเมนูหลัก</button>
              
+            {/* 🐘 NT MANAGEMENT TAB */}
+            {activeTab === 'nt' && (
+                <div className="space-y-6">
+                    <div className="flex flex-wrap gap-2 p-1.5 bg-gray-100 rounded-2xl w-fit">
+                        <button onClick={() => setNtSubTab('statistics')} className={`px-6 py-2 rounded-xl font-bold transition ${ntSubTab === 'statistics' ? 'bg-white text-pink-600 shadow-sm' : 'text-gray-400 hover:bg-gray-200'}`}>3. สรุปผลคะแนน ป.3</button>
+                        <button onClick={() => setNtSubTab('math')} className={`px-6 py-2 rounded-xl font-bold transition ${ntSubTab === 'math' ? 'bg-white text-pink-600 shadow-sm' : 'text-gray-400 hover:bg-gray-200'}`}>1. ด้านคำนวณ</button>
+                        <button onClick={() => setNtSubTab('thai')} className={`px-6 py-2 rounded-xl font-bold transition ${ntSubTab === 'thai' ? 'bg-white text-pink-600 shadow-sm' : 'text-gray-400 hover:bg-gray-200'}`}>2. ด้านภาษาไทย</button>
+                    </div>
+
+                    {ntSubTab === 'statistics' ? (
+                        <div className="animate-fade-in space-y-8">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+                                {ntSummary.map(cat => (
+                                    <div key={cat.id} className={`${cat.bg} p-6 rounded-[32px] border-2 border-white shadow-sm flex flex-col items-center text-center group hover:scale-105 transition-transform`}>
+                                        <div className="text-4xl mb-3 group-hover:rotate-12 transition-transform">{cat.icon}</div>
+                                        <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">{cat.label}</div>
+                                        <div className={`text-4xl font-black ${cat.color}`}>{cat.avg}%</div>
+                                        <div className="text-[10px] text-gray-400 font-bold mt-2">ฝึกฝนไปแล้ว {cat.count} ครั้ง</div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="bg-gray-50 rounded-[40px] p-6 md:p-8 border-2 border-white shadow-inner">
+                                <div className="flex items-center gap-3 mb-6">
+                                    <div className="bg-pink-500 p-2 rounded-xl text-white shadow-lg shadow-pink-100"><Users size={24}/></div>
+                                    <div>
+                                        <h4 className="font-black text-gray-800 text-xl font-fun">คะแนนเฉลี่ย NT รายบุคคล (ป.3)</h4>
+                                        <p className="text-sm text-gray-400 font-bold">แสดงความแม่นยำเฉลี่ยแยกตามทักษะ NT จ้ะ</p>
+                                    </div>
+                                </div>
+
+                                <div className="overflow-x-auto bg-white rounded-3xl shadow-sm border border-gray-100">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr className="bg-gray-50 text-gray-400 text-[10px] font-black uppercase tracking-widest">
+                                                <th className="p-4 rounded-tl-3xl">นักเรียน</th>
+                                                <th className="p-4 text-center">ด้านคำนวณ</th>
+                                                <th className="p-4 text-center">ด้านภาษาไทย</th>
+                                                <th className="p-4 text-center rounded-tr-3xl">ภาพรวม</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-50">
+                                            {studentNtStats.map(s => {
+                                                const scoresValues = Object.values(s.scores);
+                                                const playedScores = scoresValues.filter(v => v > 0);
+                                                const overall = playedScores.length > 0 ? Math.round(playedScores.reduce((a,b)=>a+b,0) / playedScores.length) : 0;
+                                                return (
+                                                    <tr key={s.id} className="hover:bg-pink-50/30 transition-colors">
+                                                        <td className="p-4">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center text-2xl border border-gray-100 shadow-inner">{s.avatar}</div>
+                                                                <div><div className="font-bold text-gray-700 text-sm">{s.name}</div><div className="text-[10px] text-gray-400 font-bold">ID: {s.id}</div></div>
+                                                            </div>
+                                                        </td>
+                                                        {NT_CATEGORIES.map(cat => {
+                                                            const score = s.scores[cat.id] || 0;
+                                                            return (
+                                                                <td key={cat.id} className="p-4 text-center">
+                                                                    <div className={`inline-block px-3 py-1 rounded-full font-black text-xs ${score >= 80 ? 'bg-green-50 text-green-600' : score >= 50 ? 'bg-orange-50 text-orange-600' : score > 0 ? 'bg-red-50 text-red-600' : 'text-gray-300'}`}>
+                                                                        {score > 0 ? `${score}%` : '-'}
+                                                                    </div>
+                                                                </td>
+                                                            );
+                                                        })}
+                                                        <td className="p-4 text-center"><div className={`font-black text-base ${overall >= 80 ? 'text-green-600' : overall >= 50 ? 'text-orange-600' : 'text-gray-400'}`}>{overall > 0 ? `${overall}%` : '-'}</div></td>
+                                                    </tr>
+                                                );
+                                            })}
+                                            {studentNtStats.length === 0 && (
+                                                <tr><td colSpan={4} className="p-20 text-center text-gray-400 font-bold">ยังไม่มีข้อมูลคะแนน NT ของนักเรียน ป.3 จ้ะ</td></tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="space-y-6 animate-fade-in">
+                            <div className="bg-gradient-to-r from-pink-400 to-purple-500 p-6 rounded-3xl text-white shadow-md flex flex-col md:flex-row justify-between items-center gap-4">
+                                <div>
+                                    <h4 className="text-xl font-bold">จัดการข้อสอบ NT {ntSubTab === 'math' ? 'ด้านคำนวณ' : 'ด้านภาษาไทย'}</h4>
+                                    <p className="opacity-80 text-sm">ข้อสอบสำหรับเตรียมความพร้อมระดับชาติ ป.3</p>
+                                </div>
+                                <button onClick={() => { setShowAiModal(true); setAiInstructions(''); setDraftQuestions([]); }} className="bg-white text-pink-600 px-6 py-2 rounded-xl font-bold shadow-sm hover:bg-pink-50 transition active:scale-95 flex items-center gap-2">
+                                    <Sparkles size={18}/> สร้างด้วย AI
+                                </button>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {filteredNTQuestions.length === 0 ? (
+                                    <div className="col-span-full py-20 text-center text-gray-400 border-2 border-dashed rounded-[40px] bg-gray-50">ยังไม่มีข้อสอบในหมวดนี้</div>
+                                ) : (
+                                    filteredNTQuestions.map(q => (
+                                        <div key={q.id} className="bg-white border-2 border-gray-100 p-5 rounded-[32px] shadow-sm relative group hover:border-pink-200 transition-colors">
+                                            {q.image && <img src={q.image} className="h-24 w-full object-contain rounded-2xl mb-3 bg-gray-50 p-2"/>}
+                                            <p className="font-bold text-gray-800 text-sm line-clamp-3 leading-relaxed mb-4">{q.text}</p>
+                                            <div className="space-y-1 opacity-60">
+                                                {q.choices?.slice(0,3).map((c, i) => (
+                                                    <div key={i} className={`text-xs ${c.id === q.correctChoiceId ? 'text-green-600 font-bold' : 'text-gray-500'}`}>• {c.text}</div>
+                                                ))}
+                                            </div>
+                                            <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button onClick={() => openDeleteModal(q.id, 'NT')} className="p-2 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition"><Trash2 size={16}/></button>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* 🦉 RT MANAGEMENT TAB */}
             {activeTab === 'rt' && (
                 <div className="space-y-6">
@@ -904,7 +1084,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 </div>
             )}
 
-             {/* TEACHER MANAGEMENT TAB - ADMIN ONLY */}
+            {/* TEACHER MANAGEMENT TAB - ADMIN ONLY */}
             {activeTab === 'teachers' && isAdmin && (
                 <div className="grid md:grid-cols-2 gap-8">
                     <div id="teacher-form">
@@ -1201,7 +1381,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                   {!qBankSelectedGrade ? (
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
                           {GRADE_OPTIONS.map(g => {
-                             const qCount = questions.filter(q => (q.grade || 'P2') === g.value && (q.school === teacher.school || q.school === 'CENTER') && !String(q.subject).includes('RT-') && q.subject !== Subject.RT_COMPREHENSION).length;
+                             const qCount = questions.filter(q => (q.grade || 'P2') === g.value && (q.school === teacher.school || q.school === 'CENTER') && !String(q.subject).includes('RT-') && !String(q.subject).includes('NT-') && q.subject !== Subject.RT_COMPREHENSION).length;
                              return (
                                 <button key={g.value} onClick={() => { setQBankSelectedGrade(g.value); setQGrade(g.value); setQBankSubject(null); setShowManualQForm(false); }} className={`p-8 rounded-3xl border-2 hover:shadow-xl transition-all flex flex-col items-center gap-4 ${g.color} bg-white`}>
                                     <div className="text-4xl font-black">{g.label}</div>
@@ -1577,6 +1757,14 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                         {t === 'WORD' ? 'เป็นคำ' : t === 'SENTENCE' ? 'เป็นประโยค' : 'เป็นข้อความ'}
                                     </button>
                                 ))}
+                            </div>
+                          ) : activeTab === 'nt' ? (
+                            <div className="mb-4 bg-pink-50 p-4 rounded-xl border border-pink-100">
+                                <h4 className="text-sm font-bold text-pink-700 mb-2">โหมดเตรียมสอบ NT (ชั้น ป.3)</h4>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button onClick={()=>setNtSubTab('math')} className={`p-2 rounded-xl text-xs font-bold border-2 transition ${ntSubTab === 'math' ? 'bg-pink-500 text-white border-pink-500' : 'bg-white text-pink-300'}`}>เน้นคำนวณ</button>
+                                    <button onClick={()=>setNtSubTab('thai')} className={`p-2 rounded-xl text-xs font-bold border-2 transition ${ntSubTab === 'thai' ? 'bg-pink-500 text-white border-pink-500' : 'bg-white text-pink-300'}`}>เน้นภาษาไทย</button>
+                                </div>
                             </div>
                           ) : (
                             <div className="grid grid-cols-2 gap-4 mb-2">

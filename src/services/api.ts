@@ -1,3 +1,4 @@
+
 import { supabase } from './supabaseClient';
 import { Student, Question, Teacher, Subject, ExamResult, Assignment, RTReadingItem } from '../types';
 import { MOCK_STUDENTS, MOCK_QUESTIONS } from '../constants';
@@ -15,12 +16,20 @@ const normalizeSubject = (rawSubject: string): string => {
   const s = String(rawSubject).trim();
   const up = s.toUpperCase();
   
-  if (up === 'MATH' || up === 'คณิตศาสตร์' || up === 'คณิต') return Subject.MATH;
-  if (up === 'THAI' || up === 'ภาษาไทย' || up === 'ไทย') return Subject.THAI;
+  if (up === 'MATH' || up === 'คณิตศาสตร์' || up === 'คณิต' || up === 'NT-คณิตศาสตร์' || up === 'NT_MATH') {
+    if (s.includes('NT')) return Subject.NT_MATH;
+    return Subject.MATH;
+  }
+  if (up === 'THAI' || up === 'ภาษาไทย' || up === 'ไทย' || up === 'NT-ภาษาไทย' || up === 'NT_THAI') {
+    if (s.includes('NT')) return Subject.NT_THAI;
+    return Subject.THAI;
+  }
   if (up === 'SCIENCE' || up === 'วิทยาศาสตร์' || up === 'วิทย์') return Subject.SCIENCE;
   if (up === 'ENGLISH' || up === 'ภาษาอังกฤษ' || up === 'อังกฤษ') return Subject.ENGLISH;
   if (up === 'RT_READING' || up === 'RT-การอ่านออกเสียง') return Subject.RT_READING;
   if (up === 'RT_COMPREHENSION' || up === 'RT-การอ่านรู้เรื่อง') return Subject.RT_COMPREHENSION;
+  if (up === 'NT_MATH' || up === 'NT-คณิตศาสตร์') return Subject.NT_MATH;
+  if (up === 'NT_THAI' || up === 'NT-ภาษาไทย') return Subject.NT_THAI;
   
   return s; // คืนค่าเดิมกรณีเป็นวิชาที่ครูสร้างเอง
 };
